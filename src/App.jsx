@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 import GameScene from './GameScene'
 import Auth from './Auth'
 import ProfileEditor from './ProfileEditor'
-import Leaderboard from './Leaderboard' // 新增：排行榜
+import Leaderboard from './Leaderboard'
 import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c" }
@@ -35,7 +35,7 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  if (isAuthLoading) return <div className="loading-screen">Loading...</div>
+  if (isAuthLoading) return <div className="loading-screen">Loading World...</div>
 
   if (!session && !isGuest) {
     return <Auth onGuestClick={() => setIsGuest(true)} />
@@ -47,10 +47,12 @@ function App() {
 function GameWorld({ session, isGuest }) {
   const [myId] = useState(session ? session.user.id : `guest-${Math.random().toString(36).substr(2, 5)}`)
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
-
-  const [myName, setMyName] = useState(isGuest ? "游客" : "新用户")
+  
+  const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
   const [showProfile, setShowProfile] = useState(false)
+
+  const [lang, setLang] = useState('zh') 
 
   const [cash, setCash] = useState(0)
   const [energy, setEnergy] = useState(0)
@@ -66,15 +68,14 @@ function GameWorld({ session, isGuest }) {
   const [currentGrid, setCurrentGrid] = useState({x: 0, z: 0}) 
   const [activeShop, setActiveShop] = useState(null) 
   
-  // 聊天与特效
   const [myMessage, setMyMessage] = useState("") 
   const [chatInput, setChatInput] = useState("") 
   const [showChat, setShowChat] = useState(false) 
-  const [floatEvents, setFloatEvents] = useState([]) // 新增：冒泡事件列表
+  const [floatEvents, setFloatEvents] = useState([]) 
   
   const lastFetchPos = useRef([9999, 9999, 9999])
   const FETCH_THRESHOLD = 20 
-  const VIEW_DISTANCE = 70
+  const VIEW_DISTANCE = 80 
   
   const incomeRef = useRef(income)
   const channelRef = useRef(null) 
@@ -83,7 +84,6 @@ function GameWorld({ session, isGuest }) {
   useEffect(() => { posRef.current = myPosition }, [])
   useEffect(() => { incomeRef.current = income }, [income])
 
-  // --- 辅助函数：触发文字冒泡 ---
   const triggerFloatText = (text, position) => {
     setFloatEvents(prev => [...prev, { text, pos: position }])
   }
@@ -94,7 +94,7 @@ function GameWorld({ session, isGuest }) {
   }
 
   const moveCharacter = (direction) => {
-    const speed = 0.8
+    const speed = 0.8 
     const [x, y, z] = posRef.current
     let newPos = [...posRef.current]
 
@@ -106,7 +106,10 @@ function GameWorld({ session, isGuest }) {
       default: return;
     }
 
-    if (checkCollision(newPos)) return 
+    if (checkCollision(newPos)) {
+      if (navigator.vibrate) navigator.vibrate(50)
+      return 
+    }
 
     setMyPosition(newPos)
     posRef.current = newPos
@@ -273,7 +276,6 @@ function GameWorld({ session, isGuest }) {
     alert(`✅ 形象已更新`)
   }
 
-  // --- 交互动作 (集成特效) ---
   const checkGuest = () => { if (isGuest) { alert("🔒 游客模式"); return true } return false }
   
   const work = async () => {
@@ -284,8 +286,6 @@ function GameWorld({ session, isGuest }) {
       setCash(newCash); setEnergy(newEnergy)
       await supabase.from('profiles').update({ cash: newCash, energy: newEnergy }).eq('id', myId)
       if(navigator.vibrate) navigator.vibrate(20)
-      
-      // 特效：头顶冒 +15
       triggerFloatText("+¥15", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
     } else { alert("没精力了！") }
   }
@@ -298,11 +298,15 @@ function GameWorld({ session, isGuest }) {
         setCash(newCash); setIncome(newIncome)
         await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
         triggerFloatText("-¥200", posRef.current)
-        alert("摊位已购买")
+        alert("已购买流动摊位")
       } else { alert(`钱不够，需要 ${cost}`) }
   }
 
-  const sleep = async () => { if (checkGuest()) return; setEnergy(100); await supabase.from('profiles').update({ energy: 100 }).eq('id', myId); triggerFloatText("⚡精力满", posRef.current) }
+  const sleep = async () => { 
+      if (checkGuest()) return; setEnergy(100) 
+      await supabase.from('profiles').update({ energy: 100 }).eq('id', myId)
+      triggerFloatText("⚡精力满", posRef.current)
+  }
   
   const goHome = () => {
       const homePos = getRandomSpawn(); setMyPosition(homePos); posRef.current = homePos
@@ -310,20 +314,21 @@ function GameWorld({ session, isGuest }) {
       setCurrentGrid({x: 0, z: 0}); setActiveShop(null) 
   }
 
-  const buildStore = async () => {
+  // --- 通用建造函数 (支持所有类型) ---
+  const buildBuilding = async (type, cost, incomeBoost, name) => {
     if (checkGuest()) return
-    const cost = 1000
-    if (cash < cost) { alert(`❌ 资金不足`); return }
+    if (cash < cost) { alert(`❌ 资金不足\n需要: ¥${cost}`); return }
     if (Math.abs(currentGrid.x) < 3 && Math.abs(currentGrid.z) < 3) { alert("❌ 保护区"); return }
     const isOccupied = buildings.some(b => Math.abs(b.x - currentGrid.x) < 1.5 && Math.abs(b.z - currentGrid.z) < 1.5)
     if (isOccupied) { alert("❌ 太挤了"); return }
-    const newCash = cash - cost; const newIncome = income + 20
+
+    const newCash = cash - cost; const newIncome = income + incomeBoost
     setCash(newCash); setIncome(newIncome)
     await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
-    await supabase.from('buildings').insert({ owner_id: myId, type: 'store', x: currentGrid.x, z: currentGrid.z })
+    await supabase.from('buildings').insert({ owner_id: myId, type: type, x: currentGrid.x, z: currentGrid.z })
     
-    triggerFloatText("-¥1000", posRef.current)
-    alert("✅ 建造成功")
+    triggerFloatText(`-¥${cost}`, posRef.current)
+    alert(`✅ ${name} 建造成功！\n收益 +${incomeBoost}/s`)
   }
 
   const handlePurchase = async () => {
@@ -334,8 +339,6 @@ function GameWorld({ session, isGuest }) {
     const { data, error } = await supabase.rpc('buy_item', { buyer_id: myId, building_id: activeShop.id, price: PRICE })
     if (data && data.status === 'success') {
       setCash(prev => prev - PRICE); setEnergy(prev => Math.min(prev + 20, 100))
-      
-      // 特效：扣钱 + 回血
       triggerFloatText(`-¥${PRICE}`, posRef.current)
       triggerFloatText("⚡+20", [posRef.current[0], posRef.current[1]+0.5, posRef.current[2]])
     } else { alert(`❌ 交易失败`) }
@@ -356,12 +359,11 @@ function GameWorld({ session, isGuest }) {
           isWorking={isWorking} hasShop={income > 0} 
           myPosition={myPosition} myColor={mySkin} myMessage={myMessage}
           otherPlayers={otherPlayers} buildings={buildings} currentGrid={currentGrid}
-          floatEvents={floatEvents} // 传入冒泡事件
+          floatEvents={floatEvents} lang={lang}
         />
       </div>
 
       <div className="ui-overlay">
-        {/* --- 排行榜 --- */}
         <Leaderboard myId={myId} />
 
         <div className="top-info">
@@ -370,6 +372,7 @@ function GameWorld({ session, isGuest }) {
             <div style={{cursor:'pointer', borderBottom:'1px dashed white'}}>{myName} ✏️</div>
           </div>
           <div style={{display:'flex', gap:'10px'}}>
+             <button onClick={() => setLang(prev => prev==='zh'?'en':'zh')} className="home-btn">{lang==='zh'?'EN':'中'}</button>
              <button onClick={goHome} className="home-btn">🏠</button>
              <button onClick={handleLogout} className="home-btn" style={{color:'red'}}>{isGuest ? "注册" : "退出"}</button>
           </div>
@@ -379,7 +382,6 @@ function GameWorld({ session, isGuest }) {
           Online: {Object.keys(otherPlayers).length + 1 + 20}
         </div>
 
-        {/* 聊天 UI */}
         {showChat && (
           <div style={{position:'absolute', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'auto', zIndex:50}}>
              <div style={{background:'white', padding:'20px', borderRadius:'15px', width:'80%', maxWidth:'400px'}}>
@@ -403,8 +405,8 @@ function GameWorld({ session, isGuest }) {
         {activeShop && (
            <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'}}>
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
-                 <div style={{fontSize:'12px', color:'#888', marginBottom:'5px'}}>🏪 便利店</div>
-                 <div style={{fontSize:'18px', fontWeight:'bold', marginBottom:'10px'}}>购买补给</div>
+                 <div style={{fontSize:'12px', color:'#888', marginBottom:'5px'}}>🏪 商店</div>
+                 <div style={{fontSize:'18px', fontWeight:'bold', marginBottom:'10px'}}>购买补给套餐</div>
                  <button onClick={handlePurchase} style={{background: '#2ecc71', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold'}}>支付 ¥50</button>
               </div>
            </div>
@@ -426,7 +428,15 @@ function GameWorld({ session, isGuest }) {
           <div className="actions-scroll">
             <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
             <ActionBtn title="🌭 买摊位" onClick={buyShop} color="#ffa502" disabled={income>0} />
-            <ActionBtn title="🏪 建店" onClick={buildStore} color="#9b59b6" />
+            
+            {/* === 所有建筑按钮 === */}
+            <ActionBtn title="🏪 便利店 (1k)" onClick={() => buildBuilding('store', 1000, 20, '便利店')} color="#9b59b6" />
+            <ActionBtn title="☕ 咖啡 (5k)" onClick={() => buildBuilding('coffee', 5000, 80, '咖啡馆')} color="#00704a" />
+            <ActionBtn title="⛽ 加油 (2w)" onClick={() => buildBuilding('gas', 20000, 300, '加油站')} color="#e74c3c" />
+            <ActionBtn title="🏢 科技 (10w)" onClick={() => buildBuilding('office', 100000, 1200, '科技园')} color="#3498db" />
+            <ActionBtn title="🌆 总部 (100w)" onClick={() => buildBuilding('tower', 1000000, 10000, '摩天大楼')} color="#2c3e50" />
+            <ActionBtn title="🚀 火箭 (1亿)" onClick={() => buildBuilding('rocket', 100000000, 99999, '发射基地')} color="#c0392b" />
+
             <ActionBtn title="💤 睡觉" onClick={sleep} color="#2ed573" />
           </div>
         </div>
