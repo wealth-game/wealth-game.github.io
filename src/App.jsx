@@ -263,12 +263,18 @@ function GameWorld({ session, isGuest }) {
     return () => clearInterval(timer)
   }, [])
 
+  // --- 保存形象 (拦截游客) ---
   const handleSaveProfile = async (newName, newSkin) => {
-    if (!newName || newName.trim() === "") { alert("❌ 名字不能为空"); return }
-    if (!isGuest) {
-      const { error } = await supabase.from('profiles').update({ nickname: newName, avatar: newSkin }).eq('id', myId)
-      if (error && error.code === '23505') { alert(`❌ "${newName}" 已被占用`); return }
+    if (isGuest) {
+      alert("🔒 游客模式无法保存形象。\n请注册账号以保存您的个性装扮！")
+      return
     }
+
+    if (!newName || newName.trim() === "") { alert("❌ 名字不能为空"); return }
+    
+    const { error } = await supabase.from('profiles').update({ nickname: newName, avatar: newSkin }).eq('id', myId)
+    if (error && error.code === '23505') { alert(`❌ "${newName}" 已被占用`); return }
+    
     setMyName(newName); setMySkin(newSkin); setShowProfile(false)
     if (channelRef.current) {
       channelRef.current.track({ sessionId: mySessionId, userId: myId, position: posRef.current, skin: newSkin, name: newName, isWorking: isWorking })
@@ -276,7 +282,7 @@ function GameWorld({ session, isGuest }) {
     alert(`✅ 形象已更新`)
   }
 
-  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式"); return true } return false }
+  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式\n\n请注册账号以开始创业！"); return true } return false }
   
   const work = async () => {
     if (checkGuest()) return
@@ -314,7 +320,6 @@ function GameWorld({ session, isGuest }) {
       setCurrentGrid({x: 0, z: 0}); setActiveShop(null) 
   }
 
-  // --- 通用建造函数 (支持所有类型) ---
   const buildBuilding = async (type, cost, incomeBoost, name) => {
     if (checkGuest()) return
     if (cash < cost) { alert(`❌ 资金不足\n需要: ¥${cost}`); return }
@@ -427,15 +432,15 @@ function GameWorld({ session, isGuest }) {
           </div>
           <div className="actions-scroll">
             <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
-            <ActionBtn title="🌭 买摊位" onClick={buyShop} color="#ffa502" disabled={income>0} />
+            <ActionBtn title="🌭 流动摊 (200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
             
-            {/* === 所有建筑按钮 === */}
+            {/* 优化后的按钮文案 */}
             <ActionBtn title="🏪 便利店 (1k)" onClick={() => buildBuilding('store', 1000, 20, '便利店')} color="#9b59b6" />
-            <ActionBtn title="☕ 咖啡 (5k)" onClick={() => buildBuilding('coffee', 5000, 80, '咖啡馆')} color="#00704a" />
-            <ActionBtn title="⛽ 加油 (2w)" onClick={() => buildBuilding('gas', 20000, 300, '加油站')} color="#e74c3c" />
-            <ActionBtn title="🏢 科技 (10w)" onClick={() => buildBuilding('office', 100000, 1200, '科技园')} color="#3498db" />
-            <ActionBtn title="🌆 总部 (100w)" onClick={() => buildBuilding('tower', 1000000, 10000, '摩天大楼')} color="#2c3e50" />
-            <ActionBtn title="🚀 火箭 (1亿)" onClick={() => buildBuilding('rocket', 100000000, 99999, '发射基地')} color="#c0392b" />
+            <ActionBtn title="☕ 咖啡馆 (5k)" onClick={() => buildBuilding('coffee', 5000, 80, '咖啡馆')} color="#00704a" />
+            <ActionBtn title="⛽ 加油站 (2w)" onClick={() => buildBuilding('gas', 20000, 300, '加油站')} color="#e74c3c" />
+            <ActionBtn title="🏢 科技园 (10w)" onClick={() => buildBuilding('office', 100000, 1200, '科技园')} color="#3498db" />
+            <ActionBtn title="🌆 摩天大楼 (100w)" onClick={() => buildBuilding('tower', 1000000, 10000, '摩天大楼')} color="#2c3e50" />
+            <ActionBtn title="🚀 火箭基地 (1亿)" onClick={() => buildBuilding('rocket', 100000000, 99999, '发射基地')} color="#c0392b" />
 
             <ActionBtn title="💤 睡觉" onClick={sleep} color="#2ed573" />
           </div>

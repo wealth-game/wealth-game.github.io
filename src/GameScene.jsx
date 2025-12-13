@@ -1,8 +1,15 @@
 /* src/GameScene.jsx */
-import React, { Suspense } from 'react'
+import React, { Suspense, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, PerspectiveCamera, Environment, ContactShadows, Html } from '@react-three/drei'
+import { 
+  OrbitControls, 
+  PerspectiveCamera, 
+  Environment, 
+  ContactShadows, 
+  Html 
+} from '@react-three/drei'
 
+// 引入资源
 import { Player } from './models/Player'
 import { Shop } from './models/Shop'
 import { Tree } from './models/Tree'
@@ -17,17 +24,24 @@ import {
   TechOffice, Skyscraper, RocketBase 
 } from './models/Buildings'
 
+// 1. 环境
 function EnvironmentSet() {
   return (
     <>
       <Environment preset="city" />
       <ambientLight intensity={0.8} />
-      <directionalLight position={[10, 20, 10]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} />
+      <directionalLight 
+        position={[10, 20, 10]} 
+        intensity={1.5} 
+        castShadow 
+        shadow-mapSize={[1024, 1024]} 
+      />
       <fog attach="fog" args={['#dff9fb', 30, 70]} />
     </>
   )
 }
 
+// 2. 地面
 function Ground() {
   return (
     <>
@@ -41,6 +55,7 @@ function Ground() {
   )
 }
 
+// 3. 其他玩家
 function OtherPlayer({ position, isWorking, color, name, message }) {
   return (
     <group position={position}>
@@ -56,17 +71,30 @@ function OtherPlayer({ position, isWorking, color, name, message }) {
 }
 
 // === 主场景 ===
-export default function GameScene(props) {
-  // 从 props 中解构，注意新增了 lang (如果没有传，默认为 'zh')
-  const { 
-    isWorking, hasShop, myPosition, myColor, myMessage, 
-    otherPlayers, buildings, currentGrid, floatEvents,
-    lang = 'zh' // 默认中文
-  } = props
+export default function GameScene({ 
+  isWorking, hasShop, myPosition, myColor, myMessage, 
+  otherPlayers, buildings, currentGrid, floatEvents, lang = 'zh'
+}) {
+  
+  // --- 随机生成一片森林 ---
+  const trees = useMemo(() => {
+    const temp = []
+    for(let i=0; i<50; i++) { // 增加到50棵树
+      const angle = Math.random() * Math.PI * 2
+      const radius = 15 + Math.random() * 40 // 分布在 15-55米，不挡住中心
+      temp.push({
+        x: Math.sin(angle) * radius,
+        z: Math.cos(angle) * radius,
+        type: Math.random() > 0.5 ? 'pine' : 'round'
+      })
+    }
+    return temp
+  }, [])
 
   return (
     <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: 'linear-gradient(to bottom, #dff9fb, #ffffff)' }}>
       <Canvas shadows="basic" dpr={[1, 2]}>
+        
         <PerspectiveCamera makeDefault position={[0, 12, 16]} fov={45} />
         <OrbitControls enableZoom={true} minDistance={5} maxDistance={40} target={myPosition} />
 
@@ -75,16 +103,14 @@ export default function GameScene(props) {
           <Ground />
           <FloatingTextManager events={floatEvents} />
           <NPCSystem />
-          {currentGrid && <SelectionBox x={myPosition[0]} z={myPosition[2]} />}
           
+          {currentGrid && <SelectionBox x={myPosition[0]} z={myPosition[2]} />}
           <Monument />
 
-          {/* === 渲染建筑 (传入 lang) === */}
+          {/* 渲染建筑 (带名字和语言) */}
           {buildings && buildings.map(b => {
             const pos = [b.x, 0, b.z]
-            // 统一把 owner_name 传进去，哪怕是 undefined
-            const owner = b.owner_name || "未知富豪" 
-            
+            const owner = b.owner_name || "未知富豪"
             switch(b.type) {
               case 'store':  return <ConvenienceStore key={b.id} position={pos} lang={lang} owner={owner} />
               case 'coffee': return <CoffeeShop key={b.id} position={pos} lang={lang} owner={owner} />
@@ -110,10 +136,11 @@ export default function GameScene(props) {
             return <OtherPlayer key={key} position={p.position} color={p.skin || p.color} isWorking={p.isWorking} name={p.name} message={p.message} />
           })}
           
-          <Tree position={[-6, 0, -6]} type="pine" />
-          <Tree position={[6, 0, 6]} type="round" />
-          <Tree position={[-8, 0, 5]} type="round" />
-          <Tree position={[8, 0, -4]} type="pine" />
+          {/* 渲染大量树木 */}
+          {trees.map((t, i) => (
+            <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
+          ))}
+
         </Suspense>
       </Canvas>
     </div>

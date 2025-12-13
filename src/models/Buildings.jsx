@@ -11,8 +11,8 @@ const LABELS = {
   rocket: { zh: '火星计划', en: 'MARS MISSION' }
 }
 
-// 提取一个通用的标签组件，避免重复写代码
-function BuildingLabel({ type, lang, owner, color, bg = 'white', border = 'none' }) {
+// 通用标签组件 (已升级：支持自定义 owner 颜色)
+function BuildingLabel({ type, lang, owner, color, bg = 'white', border = 'none', ownerColor }) {
   return (
     <Html position={[0, 0, 0]} center distanceFactor={20} transform sprite>
       <div style={{
@@ -25,16 +25,15 @@ function BuildingLabel({ type, lang, owner, color, bg = 'white', border = 'none'
         pointerEvents: 'none',
         minWidth: '60px'
       }}>
-        {/* 建筑名称 */}
         <div style={{fontSize: '10px', fontWeight: 'bold', color: color, whiteSpace: 'nowrap'}}>
           {LABELS[type][lang]}
         </div>
-        {/* 主人名字 (新增) */}
         <div style={{
           fontSize: '8px', 
-          color: bg === 'black' ? '#aaa' : '#666', 
+          // 如果指定了 ownerColor 则使用，否则根据背景色自动判断(白底黑字，黑底灰字)
+          color: ownerColor || (bg === 'white' ? '#666' : '#ccc'), 
           marginTop: '2px', 
-          borderTop: `1px solid ${bg === 'black' ? '#333' : '#eee'}`,
+          borderTop: `1px solid ${bg === 'white' ? '#eee' : 'rgba(255,255,255,0.2)'}`,
           paddingTop: '2px',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
@@ -55,7 +54,7 @@ export function ConvenienceStore({ position, lang = 'zh', owner }) {
       <group position={[0, 0.05, 0]}>
         <mesh position={[0, 1.25, 0]} castShadow receiveShadow>
           <boxGeometry args={[1.8, 2.5, 1.8]} />
-          <meshStandardMaterial color="#ffffff" />
+          <meshStandardMaterial color="#ffffff" roughness={0.2} />
         </mesh>
         <group position={[0, 2.2, 0.92]}>
           <mesh position={[0, 0.2, 0]}><boxGeometry args={[1.6, 0.15, 0.05]} /><meshStandardMaterial color="#f39c12" /></mesh>
@@ -64,7 +63,6 @@ export function ConvenienceStore({ position, lang = 'zh', owner }) {
         </group>
         <mesh position={[0, 0.9, 0.91]}><planeGeometry args={[1.4, 1.6]} /><meshStandardMaterial color="#81ecec" transparent opacity={0.6} /></mesh>
         
-        {/* 标签放在屋顶上方 */}
         <group position={[0, 3.2, 0]}>
           <BuildingLabel type="store" lang={lang} owner={owner} color="#e67e22" border="2px solid #27ae60" />
         </group>
@@ -73,7 +71,7 @@ export function ConvenienceStore({ position, lang = 'zh', owner }) {
   )
 }
 
-// === T3: 咖啡馆 ===
+// === T3: 咖啡馆 (已修复字体颜色) ===
 export function CoffeeShop({ position, lang = 'zh', owner }) {
   return (
     <group position={position}>
@@ -83,7 +81,8 @@ export function CoffeeShop({ position, lang = 'zh', owner }) {
         <mesh position={[0, 2.4, 1.1]} rotation={[0.3, 0, 0]} castShadow><boxGeometry args={[1.9, 0.1, 0.6]} /><meshStandardMaterial color="#00704a" /></mesh>
         
         <group position={[0, 3.5, 0]}>
-          <BuildingLabel type="coffee" lang={lang} owner={owner} color="white" bg="#00704a" />
+          {/* 强制 owner 名字显示为白色 */}
+          <BuildingLabel type="coffee" lang={lang} owner={owner} color="white" bg="#00704a" ownerColor="rgba(255,255,255,0.9)" />
         </group>
       </group>
     </group>
@@ -100,7 +99,7 @@ export function GasStation({ position, lang = 'zh', owner }) {
       <mesh position={[0, 0.6, 0]} castShadow><boxGeometry args={[1.2, 1.2, 0.4]} /><meshStandardMaterial color="#f1c40f" /></mesh>
 
       <group position={[0, 3.5, 0]}>
-        <BuildingLabel type="gas" lang={lang} owner={owner} color="white" bg="#e74c3c" />
+        <BuildingLabel type="gas" lang={lang} owner={owner} color="white" bg="#e74c3c" ownerColor="white" />
       </group>
     </group>
   )
