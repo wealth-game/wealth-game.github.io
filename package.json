@@ -35,5 +35,5 @@
   "overrides": {
     "vite": "npm:rolldown-vite@7.2.5"
   },
-  "homepage": "https://wealth-game.github.io/"
+  "homepage": "https://money.iloveweiqi.com/"
 }

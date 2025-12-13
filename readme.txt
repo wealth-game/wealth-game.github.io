@@ -144,7 +144,10 @@ $$;
 git add .
 git commit -m "移动端适配与最终模型"
 git push
+git push -f -u origin main
 npm run deploy
+本机
+npm run dev
 
 接下来我们做什么？
 
@@ -243,3 +246,8 @@ GameScene.jsx和app.jsx完整代码
 ---
 确认这个游戏不卡吧？
 现在不卡，将来也不卡。
+
+现在这个游戏完成了，玩法是什么呢？
+赚钱，买建筑？未免太简单了？
+买家之间怎样交易？怎样通信？
+日常是怎么个玩法？
