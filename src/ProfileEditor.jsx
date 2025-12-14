@@ -1,6 +1,24 @@
 /* src/ProfileEditor.jsx */
 import React, { useState } from 'react'
 
+// ✅ 修复：把子组件移到外面，防止每次渲染时被销毁重建
+const ColorInput = ({ label, value, onChange }) => (
+  <div style={styles.formGroup}>
+    <label>{label}</label>
+    <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+      {/* 显示颜色代码，方便看 */}
+      <span style={{fontSize:'10px', color:'#999', fontFamily:'monospace'}}>{value}</span>
+      <input 
+        type="color" 
+        value={value} 
+        // 这里的 onChange 直接传出去
+        onChange={onChange}
+        style={{cursor:'pointer', width:'40px', height:'30px', border:'none', padding:0, background:'none'}}
+      />
+    </div>
+  </div>
+)
+
 export default function ProfileEditor({ initialName, initialSkin, onSave, onClose }) {
   const [name, setName] = useState(initialName)
   const [skin, setSkin] = useState({
@@ -17,23 +35,8 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
     onSave(name, skin)
   }
 
-  const ColorInput = ({ label, part }) => (
-    <div style={styles.formGroup}>
-      <label>{label}</label>
-      <input 
-        type="color" 
-        value={skin[part]} 
-        // 这里的 stopPropagation 是为了双重保险
-        onClick={(e) => e.stopPropagation()}
-        onChange={e => handleColorChange(part, e.target.value)} 
-        style={{cursor:'pointer', width:'40px', height:'30px', border:'none', padding:0}}
-      />
-    </div>
-  )
-
   return (
-    // 关键修改：移除了外层的 onClick={onClose}
-    // 现在只有点击下面的【取消】按钮才能关掉弹窗，防止选颜色时误触关闭
+    // 遮罩层：即使点击这里也不关闭，强制点按钮关闭，防止误触
     <div style={styles.overlay}>
       <div style={styles.card}>
         <h2 style={{marginTop:0}}>🎨 形象定制</h2>
@@ -48,6 +51,7 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
           />
         </div>
 
+        {/* 预览小人颜色 */}
         <div style={styles.preview}>
            <div style={{...styles.colorBlock, background: skin.hair, color:'white'}}>发</div>
            <div style={{...styles.colorBlock, background: skin.head}}>脸</div>
@@ -56,14 +60,16 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
            <div style={{...styles.colorBlock, background: skin.shoes, color:'white'}}>鞋</div>
         </div>
 
+        {/* 滚动区域 */}
         <div style={styles.scrollArea}>
-          <ColorInput label="头发 (Hair)" part="hair" />
-          <ColorInput label="肤色 (Skin)" part="head" />
-          <ColorInput label="眼睛 (Eyes)" part="eyes" />
-          <ColorInput label="上衣 (Top)" part="body" />
-          <ColorInput label="裤子 (Pants)" part="legs" />
-          <ColorInput label="鞋子 (Shoes)" part="shoes" />
-          <ColorInput label="背包 (Pack)" part="backpack" />
+          {/* ✅ 修复：直接使用外部定义的组件，状态更新时不会丢失焦点 */}
+          <ColorInput label="头发 (Hair)" value={skin.hair} onChange={e => handleColorChange('hair', e.target.value)} />
+          <ColorInput label="肤色 (Skin)" value={skin.head} onChange={e => handleColorChange('head', e.target.value)} />
+          <ColorInput label="眼睛 (Eyes)" value={skin.eyes} onChange={e => handleColorChange('eyes', e.target.value)} />
+          <ColorInput label="上衣 (Top)" value={skin.body} onChange={e => handleColorChange('body', e.target.value)} />
+          <ColorInput label="裤子 (Pants)" value={skin.legs} onChange={e => handleColorChange('legs', e.target.value)} />
+          <ColorInput label="鞋子 (Shoes)" value={skin.shoes} onChange={e => handleColorChange('shoes', e.target.value)} />
+          <ColorInput label="背包 (Pack)" value={skin.backpack} onChange={e => handleColorChange('backpack', e.target.value)} />
         </div>
 
         <div style={styles.btnGroup}>
@@ -78,11 +84,11 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
 const styles = {
   overlay: {
     position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-    background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100
+    background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100
   },
   card: {
     background: 'white', padding: '20px', borderRadius: '15px', width: '320px', maxHeight:'90vh',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.3)', display:'flex', flexDirection:'column'
+    boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display:'flex', flexDirection:'column'
   },
   formGroup: { marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize:'14px' },
   input: { padding: '8px', borderRadius: '5px', border: '1px solid #ccc', width: '150px', fontSize:'16px' },
