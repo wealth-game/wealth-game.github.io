@@ -111,14 +111,17 @@ export default function GameScene({
           {buildings && buildings.map(b => {
             const pos = [b.x, 0, b.z]
             const owner = b.owner_name || "未知富豪"
+            const level = b.level || 1 // <--- 获取等级
+
+            // 必须把 level 传给所有组件
             switch(b.type) {
-              case 'store':  return <ConvenienceStore key={b.id} position={pos} lang={lang} owner={owner} />
-              case 'coffee': return <CoffeeShop key={b.id} position={pos} lang={lang} owner={owner} />
-              case 'gas':    return <GasStation key={b.id} position={pos} lang={lang} owner={owner} />
-              case 'office': return <TechOffice key={b.id} position={pos} lang={lang} owner={owner} />
-              case 'tower':  return <Skyscraper key={b.id} position={pos} lang={lang} owner={owner} />
-              case 'rocket': return <RocketBase key={b.id} position={pos} lang={lang} owner={owner} />
-              default:       return <ConvenienceStore key={b.id} position={pos} lang={lang} owner={owner} />
+              case 'store':  return <ConvenienceStore key={b.id} position={pos} lang={lang} owner={owner} level={level} />
+              case 'coffee': return <CoffeeShop key={b.id} position={pos} lang={lang} owner={owner} level={level} />
+              case 'gas':    return <GasStation key={b.id} position={pos} lang={lang} owner={owner} level={level} />
+              case 'office': return <TechOffice key={b.id} position={pos} lang={lang} owner={owner} level={level} />
+              case 'tower':  return <Skyscraper key={b.id} position={pos} lang={lang} owner={owner} level={level} />
+              case 'rocket': return <RocketBase key={b.id} position={pos} lang={lang} owner={owner} level={level} />
+              default:       return <ConvenienceStore key={b.id} position={pos} lang={lang} owner={owner} level={level} />
             }
           })}
 

@@ -4,90 +4,63 @@ import { useFrame } from '@react-three/fiber'
 import { Html, Float } from '@react-three/drei'
 
 export function Monument() {
-  const crystalRef = useRef()
-  const ringRef = useRef()
+  const outerRing = useRef()
+  const innerRing = useRef()
+  const coreRef = useRef()
+  const beamRef = useRef()
+  const lightRef = useRef()
 
-  // 动画：让水晶和光环转动
   useFrame((state, delta) => {
-    if (crystalRef.current) crystalRef.current.rotation.y += delta * 0.5
-    if (ringRef.current) {
-      ringRef.current.rotation.z -= delta * 0.2
-      ringRef.current.rotation.x = Math.sin(state.clock.elapsedTime) * 0.1
+    const t = state.clock.elapsedTime
+    if (outerRing.current) { outerRing.current.rotation.y -= delta * 0.2; outerRing.current.rotation.x = Math.sin(t * 0.5) * 0.1 }
+    if (innerRing.current) { innerRing.current.rotation.x += delta * 0.5; innerRing.current.rotation.z += delta * 0.5 }
+    if (coreRef.current) { coreRef.current.rotation.y += delta; coreRef.current.rotation.z = Math.sin(t) * 0.5 }
+    // 光束呼吸
+    if (beamRef.current) {
+      const scale = 1 + Math.sin(t * 3) * 0.1
+      beamRef.current.scale.set(scale, 1, scale)
     }
+    if (lightRef.current) lightRef.current.intensity = 2 + Math.sin(t * 2)
   })
 
   return (
     <group position={[0, 0, 0]}>
-      {/* === 1. 宏伟基座 (三层阶梯) === */}
-      <mesh position={[0, 0.25, 0]} receiveShadow>
-        <boxGeometry args={[5, 0.5, 5]} />
-        <meshStandardMaterial color="#7f8c8d" roughness={0.5} />
-      </mesh>
-      <mesh position={[0, 0.75, 0]} receiveShadow>
-        <boxGeometry args={[3.5, 0.5, 3.5]} />
-        <meshStandardMaterial color="#95a5a6" roughness={0.5} />
-      </mesh>
-      <mesh position={[0, 1.25, 0]} receiveShadow>
-        <boxGeometry args={[2.5, 0.5, 2.5]} />
-        <meshStandardMaterial color="#bdc3c7" roughness={0.5} />
+      {/* 1. 华丽基座 */}
+      <mesh position={[0, 0.5, 0]} receiveShadow><cylinderGeometry args={[4, 4.5, 1, 8]} /><meshStandardMaterial color="#1a1a1a" roughness={0.1} metalness={0.8} /></mesh>
+      <mesh position={[0, 1.1, 0]}><cylinderGeometry args={[3.8, 3.8, 0.2, 8]} /><meshStandardMaterial color="#f1c40f" metalness={1} roughness={0.1} /></mesh>
+      <mesh position={[0, 2, 0]} castShadow><cylinderGeometry args={[2.5, 3, 2, 6]} /><meshStandardMaterial color="#2c3e50" roughness={0.2} /></mesh>
+
+      {/* 2. 通天光束 (无限高) */}
+      <mesh ref={beamRef} position={[0, 100, 0]}>
+        {/* 高度 200米，半径 0.5米 */}
+        <cylinderGeometry args={[0.5, 0.5, 200, 32]} />
+        <meshStandardMaterial color="#00ffff" transparent opacity={0.4} emissive="#00ffff" emissiveIntensity={2} toneMapped={false} />
       </mesh>
 
-      {/* === 2. 主塔身 (现代风格方尖碑) === */}
-      <mesh position={[0, 6, 0]} castShadow>
-        <cylinderGeometry args={[0.8, 1.5, 10, 4]} /> {/* 4边形柱体 */}
-        <meshStandardMaterial color="#ecf0f1" metalness={0.2} roughness={0.1} />
-      </mesh>
-      
-      {/* 塔身装饰线 (发光) */}
-      <mesh position={[0, 6, 0]}>
-        <cylinderGeometry args={[0.82, 1.52, 9, 4]} />
-        <meshStandardMaterial color="#3498db" wireframe emissive="#3498db" emissiveIntensity={0.5} />
+      {/* 3. 实体塔身 (增加高度到 30米) */}
+      <mesh position={[0, 15, 0]} castShadow>
+        <cylinderGeometry args={[0.3, 1.5, 30, 4]} />
+        <meshStandardMaterial color="#ecf0f1" metalness={0.5} />
       </mesh>
 
-      {/* === 3. 顶部能量核心 === */}
-      <group position={[0, 12, 0]}>
-        {/* 浮动动画 */}
-        <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-          {/* 发光水晶 */}
-          <mesh ref={crystalRef}>
-            <octahedronGeometry args={[1.2, 0]} />
-            <meshStandardMaterial 
-              color="#f1c40f" 
-              emissive="#f1c40f" 
-              emissiveIntensity={2} 
-              toneMapped={false} 
-            />
+      {/* 4. 悬浮核心 */}
+      <group position={[0, 8, 0]}>
+        <Float speed={2} rotationIntensity={0.2} floatIntensity={0.5}>
+          <mesh ref={coreRef}>
+            <octahedronGeometry args={[1.5, 0]} />
+            <meshStandardMaterial color="#00ffff" emissive="white" emissiveIntensity={1} wireframe />
+            <mesh scale={[0.8, 0.8, 0.8]}><octahedronGeometry args={[1.5, 0]} /><meshStandardMaterial color="#00ffff" emissive="#00ffff" emissiveIntensity={3} /></mesh>
           </mesh>
-          
-          {/* 科技感光环 */}
-          <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[2, 0.1, 16, 100]} />
-            <meshStandardMaterial color="#3498db" emissive="#3498db" emissiveIntensity={1} />
-          </mesh>
+          <mesh ref={outerRing}><torusGeometry args={[3.5, 0.2, 16, 100]} /><meshStandardMaterial color="#f1c40f" metalness={1} roughness={0} /></mesh>
+          <mesh ref={innerRing}><torusGeometry args={[2.5, 0.15, 16, 100]} /><meshStandardMaterial color="#ecf0f1" metalness={0.8} emissive="#ecf0f1" emissiveIntensity={0.2} /></mesh>
+          <pointLight ref={lightRef} distance={30} color="#00ffff" />
         </Float>
-        
-        {/* 顶部点光源，照亮周围 */}
-        <pointLight intensity={2} distance={10} color="#f1c40f" />
       </group>
 
-      {/* === 4. 悬浮文字 === */}
-      <Html position={[0, 15, 0]} center distanceFactor={25}>
-        <div style={{
-          textAlign: 'center', pointerEvents: 'none'
-        }}>
-          <div style={{
-            fontSize: '24px', fontWeight: '900', color: 'white', 
-            textShadow: '0 0 10px #f1c40f, 0 0 20px #f1c40f',
-            letterSpacing: '4px'
-          }}>
-            CITY CENTER
-          </div>
-          <div style={{
-            fontSize: '10px', color: '#ecf0f1', marginTop: '5px',
-            background: 'rgba(0,0,0,0.5)', padding: '2px 8px', borderRadius: '10px'
-          }}>
-            (0, 0) 绝对安全区
-          </div>
+      <Html position={[0, 5, 0]} center distanceFactor={30} transform sprite>
+        <div style={{textAlign: 'center', pointerEvents: 'none', userSelect: 'none'}}>
+          <div style={{fontSize: '24px', fontWeight: '900', color: '#fff', textShadow: '0 0 10px #00ffff', fontFamily: 'Impact, sans-serif'}}>WORLD CENTER</div>
+          <div style={{fontSize: '10px', color: '#f1c40f', background: 'rgba(0,0,0,0.8)', padding: '2px 10px', borderRadius: '4px'}}>[ 0, 0 ]</div>
         </div>
       </Html>
     </group>
