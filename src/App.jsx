@@ -454,22 +454,24 @@ function GameWorld({ session, isGuest }) {
   }
 
   // --- 关键修复：handlePurchase (交易逻辑) ---
+  // --- 购买 / 升级 逻辑 (优化版：成功后自动关闭窗口) ---
   const handlePurchase = async () => {
     // 1. 游客拦截
     if (checkGuest()) return
     
-    // 2. 确保有店铺
+    // 2. 确保有店铺选中
     if (!activeShop) return
-
-    // 3. 按钮反馈：点击瞬间先提示正在处理（可选），或者加个震动
-    if(navigator.vibrate) navigator.vibrate(20)
-
-    // A. 别人的店 -> 消费
+    
+    // ------------------------------------------------
+    // 场景 A: 别人的店 -> 消费
+    // ------------------------------------------------
     if (activeShop.owner_id !== myId) {
       const PRICE = 50 
-      if (cash < PRICE) { alert("❌ 钱不够"); return }
+      if (cash < PRICE) { 
+        alert("❌ 余额不足，无法支付！")
+        return 
+      }
       
-      // 调用远程函数
       const { data, error } = await supabase.rpc('buy_item', { 
         buyer_id: myId, 
         building_id: activeShop.id, 
@@ -477,28 +479,39 @@ function GameWorld({ session, isGuest }) {
       })
 
       if (data && data.status === 'success') {
-        setCash(prev => prev - PRICE); setEnergy(prev => Math.min(prev + 20, 100))
+        // 前端更新数值
+        setCash(prev => prev - PRICE)
+        setEnergy(prev => Math.min(prev + 20, 100))
+        
+        // 视觉特效
         triggerFloatText(`-$${PRICE}`, posRef.current)
         triggerFloatText("⚡+20", [posRef.current[0], posRef.current[1]+0.5, posRef.current[2]])
-      } else {
-        // 🚨 错误捕获：显示具体原因
-        alert(`❌ 交易失败: ${data ? data.message : (error?.message || "未知错误")}`)
+        
+        // 🟢 关键修复：支付成功后，立即关闭弹窗！
+        setActiveShop(null) 
+        
+      } else { 
+        alert(`❌ 交易失败: ${data ? data.message : error?.message}`) 
       }
     } 
     
-    // B. 自己的店 -> 升级
+    // ------------------------------------------------
+    // 场景 B: 自己的店 -> 升级
+    // ------------------------------------------------
     else {
       const currentLevel = activeShop.level || 1
       if (currentLevel >= MAX_LEVEL) { alert("🏆 已满级"); return }
       
       const upgradeCost = 5000 * Math.pow(2, currentLevel - 1)
       const confirm = window.confirm(`🆙 升级店铺 (Lv.${currentLevel} -> Lv.${currentLevel+1})\n\n费用: $${upgradeCost.toLocaleString()}\n收益: +10%`)
+      
       if (!confirm) return
       if (cash < upgradeCost) { alert("❌ 资金不足"); return }
 
       const newCash = cash - upgradeCost
       const newIncome = Math.floor(income * 1.1)
       setCash(newCash); setIncome(newIncome)
+      
       triggerFloatText(`-$${upgradeCost}`, posRef.current)
       triggerFloatText("UPGRADE!", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
 
@@ -506,7 +519,9 @@ function GameWorld({ session, isGuest }) {
       await supabase.from('buildings').update({ level: currentLevel + 1 }).eq('id', activeShop.id)
       
       setBuildings(prev => prev.map(b => b.id === activeShop.id ? { ...b, level: currentLevel + 1 } : b))
-      setActiveShop(prev => ({ ...prev, level: currentLevel + 1 }))
+      
+      // 🟢 升级成功后也关闭弹窗，让玩家看一眼变大的建筑
+      setActiveShop(null)
     }
   }
 
