@@ -6,6 +6,7 @@ import Auth from './Auth'
 import ProfileEditor from './ProfileEditor'
 import Leaderboard from './Leaderboard'
 import BankModal from './BankModal'
+import StockMarket from './StockMarket' // <--- 新增
 import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
@@ -56,8 +57,11 @@ function GameWorld({ session, isGuest }) {
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
+  
   const [showProfile, setShowProfile] = useState(false)
-  const [showBank, setShowBank] = useState(false) 
+  const [showBank, setShowBank] = useState(false)
+  const [showStock, setShowStock] = useState(false) // <--- 新增：股市弹窗
+  
   const [lang, setLang] = useState('zh') 
 
   const [cash, setCash] = useState(0)
@@ -65,7 +69,6 @@ function GameWorld({ session, isGuest }) {
   const [income, setIncome] = useState(0)
   const [deposit, setDeposit] = useState(0) 
   const [loan, setLoan] = useState(0)       
-
   const [loading, setLoading] = useState(true)
   const [isWorking, setIsWorking] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
@@ -140,6 +143,7 @@ function GameWorld({ session, isGuest }) {
       const dx = newPos[0] - b.x; const dz = newPos[2] - b.z
       return Math.sqrt(dx*dx + dz*dz) < 2.5
     })
+    
     if (nearby) setActiveShop(nearby)
     else setActiveShop(null)
 
@@ -235,51 +239,26 @@ function GameWorld({ session, isGuest }) {
     channel
       .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState()
-        
-        // 🛡️ 关键修复：合并状态时，保留旧的 message
         setOtherPlayers(prev => {
           const next = { ...prev }
-          // 1. 先把不在 newState 里的删掉 (有人下线)
-          // (简化处理：全量替换，但保留消息)
-          
-          const newPlayersMap = {}
-
           for (let key in newState) {
             if (key !== mySessionId) {
                const user = newState[key][0]
-               if (user) {
-                 // 🚨 重点：如果之前有这个人，并且他有 message，把 message 继承过来
-                 const existingMessage = prev[key]?.message
-                 newPlayersMap[key] = { 
-                   ...user, 
-                   // 如果新状态没带消息(通常都不带)，就用旧的；或者设为 null
-                   message: existingMessage || null 
-                 }
-               }
+               if (user) next[key] = { ...user, message: next[key]?.message || null }
             }
           }
-          return newPlayersMap
+          return next
         })
       })
       .on('broadcast', { event: 'chat' }, ({ payload }) => {
-        console.log("收到聊天:", payload)
         setOtherPlayers(prev => {
           if (!prev[payload.sessionId]) return prev
-          // 强制更新 message
-          return { 
-            ...prev, 
-            [payload.sessionId]: { ...prev[payload.sessionId], message: payload.text } 
-          }
+          return { ...prev, [payload.sessionId]: { ...prev[payload.sessionId], message: payload.text } }
         })
-        
-        // 5秒后清除消息
         setTimeout(() => {
           setOtherPlayers(prev => {
             if (!prev[payload.sessionId]) return prev
-            return { 
-              ...prev, 
-              [payload.sessionId]: { ...prev[payload.sessionId], message: null } 
-            }
+            return { ...prev, [payload.sessionId]: { ...prev[payload.sessionId], message: null } }
           })
         }, 5000)
       })
@@ -303,27 +282,11 @@ function GameWorld({ session, isGuest }) {
   const handleSendChat = async () => {
     if (!chatInput.trim()) { setShowChat(false); return }
     const text = chatInput.substring(0, 30)
-    
-    // 1. 自己立即显示
-    setMyMessage(text); 
-    setChatInput(""); 
-    setShowChat(false)
+    setMyMessage(text); setChatInput(""); setShowChat(false)
+    if (channelRef.current) await channelRef.current.send({ type: 'broadcast', event: 'chat', payload: { sessionId: mySessionId, text: text } })
     setTimeout(() => setMyMessage(null), 5000)
-
-    // 2. 广播
-    if (channelRef.current) {
-      console.log("发送广播:", text)
-      await channelRef.current.send({ 
-        type: 'broadcast', 
-        event: 'chat', 
-        payload: { sessionId: mySessionId, text: text } 
-      })
-    } else {
-      alert("未连接到聊天服务器")
-    }
   }
 
-  // 位置同步
   useEffect(() => {
     if (!isConnected || !channelRef.current) return
     const syncInterval = setInterval(() => {
@@ -345,11 +308,9 @@ function GameWorld({ session, isGuest }) {
     return () => clearInterval(syncInterval)
   }, [isConnected, isWorking, isMoving, mySkin, myName, myId])
 
-  // 自动赚钱 & 银行 & 保存
   useEffect(() => {
     const timer = setInterval(() => {
       if (incomeRef.current > 0) setCash(prev => prev + parseFloat(incomeRef.current))
-      
       if (!isGuest) {
         setDeposit(prev => prev * (1 + 0.005/60)) 
         setLoan(prev => prev * (1 + 0.05/60))    
@@ -359,10 +320,7 @@ function GameWorld({ session, isGuest }) {
     
     const saveTimer = setInterval(async () => {
       if (!isGuest && incomeRef.current > 0) {
-        await supabase.from('profiles').update({ 
-          cash: cashRef.current,
-          last_active_at: new Date().toISOString()
-        }).eq('id', myId)
+        await supabase.from('profiles').update({ cash: cashRef.current, last_active_at: new Date().toISOString() }).eq('id', myId)
       }
     }, 30000)
     return () => { clearInterval(timer); clearInterval(saveTimer) }
@@ -394,7 +352,7 @@ function GameWorld({ session, isGuest }) {
     alert(`✅ 形象已更新`)
   }
 
-  const checkGuest = () => { if (isGuest) { alert("🔒 请注册账号"); return true } return false }
+  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式\n\n请注册账号！"); return true } return false }
   
   const work = async () => {
     if (checkGuest()) return
@@ -515,6 +473,12 @@ function GameWorld({ session, isGuest }) {
           onClose={() => setShowBank(false)} 
         />
       )}
+      {showStock && (
+        <StockMarket 
+          myId={myId} cash={cash} 
+          onClose={() => setShowStock(false)} 
+        />
+      )}
 
       <div className="scene-container">
         <GameScene 
@@ -565,6 +529,7 @@ function GameWorld({ session, isGuest }) {
           <button onClick={() => setShowChat(true)} style={{position:'absolute', right:'20px', bottom:'180px', width:'50px', height:'50px', borderRadius:'50%', background:'white', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.2)', fontSize:'24px', cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'}}>💬</button>
         )}
 
+        {/* 交互弹窗 */}
         {activeShop && (
            <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'}}>
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
@@ -616,18 +581,22 @@ function GameWorld({ session, isGuest }) {
           <div className="actions-scroll">
             <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
             <ActionBtn title="🌭 流动摊 (200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
+            
             <ActionBtn title="🏪 便利店 (5k)" onClick={() => buildBuilding('store', 5000, 15, '便利店')} color="#9b59b6" />
             <ActionBtn title="☕ 咖啡馆 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
             <ActionBtn title="⛽ 加油站 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
             <ActionBtn title="🏢 科技园 (1000w)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
             <ActionBtn title="🌆 摩天大楼 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
             <ActionBtn title="🚀 火箭基地 (1000亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
+            
             <ActionBtn 
               title={cooldown > 0 ? `💤 ${cooldown}s` : "💤 睡觉"} 
               onClick={sleep} 
               color="#2ed573" 
               disabled={cooldown > 0}
             />
+            {/* 增加独立的股市和银行按钮 */}
+            <ActionBtn title="📈 股市" onClick={() => setShowStock(true)} color="#34495e" />
             <ActionBtn title="🏦 银行" onClick={() => setShowBank(true)} color="#2c3e50" />
           </div>
         </div>
