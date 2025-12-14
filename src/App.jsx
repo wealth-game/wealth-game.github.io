@@ -22,15 +22,15 @@ const getSafeSpawnAround = (x, z) => {
   return [x + Math.sin(angle) * distance, 0, z + Math.cos(angle) * distance]
 }
 
-// 🛡️【关键修复】：定义翻译函数，防止报错
+// 翻译函数
 const getBuildingName = (type) => {
   const map = { 
     store: '便利店', 
     coffee: '咖啡馆', 
     gas: '加油站', 
     office: '科技园', 
-    tower: '摩天楼', 
-    rocket: '发射场' 
+    tower: '摩天大楼', 
+    rocket: '火箭基地' 
   }
   return map[type] || '建筑'
 }
@@ -190,7 +190,10 @@ function GameWorld({ session, isGuest }) {
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', myId).single()
         if (profile) {
           const { data: home } = await supabase.from('buildings').select('x, z').eq('owner_id', myId).order('created_at', { ascending: true }).limit(1).single()
-          if (home) spawnPos = getSafeSpawnAround(home.x, home.z)
+          if (home) {
+            spawnPos = getSafeSpawnAround(home.x, home.z)
+            console.log("🏠 欢迎回家")
+          }
           
           let offlineCash = 0
           if (profile.last_active_at && profile.passive_income > 0) {
@@ -331,7 +334,7 @@ function GameWorld({ session, isGuest }) {
     alert(`✅ 形象已更新`)
   }
 
-  const checkGuest = () => { if (isGuest) { alert("🔒 请注册账号"); return true } return false }
+  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式\n\n请注册账号！"); return true } return false }
   
   const work = async () => {
     if (checkGuest()) return
@@ -345,6 +348,7 @@ function GameWorld({ session, isGuest }) {
     } else { alert("没精力了！") }
   }
 
+  // ✅ 修复确认：流动摊位价格 $200，收益 +5
   const buyShop = async () => {
       if (checkGuest()) return
       const cost = 200
@@ -402,7 +406,6 @@ function GameWorld({ session, isGuest }) {
     await supabase.from('buildings').insert({ owner_id: myId, type: type, x: currentGrid.x, z: currentGrid.z, level: 1 })
   }
 
-  // 购买/升级
   const handlePurchase = async () => {
     if (checkGuest()) return
     if (!activeShop) return
@@ -506,7 +509,7 @@ function GameWorld({ session, isGuest }) {
           <button onClick={() => setShowChat(true)} style={{position:'absolute', right:'20px', bottom:'180px', width:'50px', height:'50px', borderRadius:'50%', background:'white', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.2)', fontSize:'24px', cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'}}>💬</button>
         )}
 
-        {/* 交互弹窗 (修复了 getBuildingName 调用) */}
+        {/* --- 交互弹窗 --- */}
         {activeShop && (
            <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'}}>
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
@@ -555,14 +558,15 @@ function GameWorld({ session, isGuest }) {
           </div>
           <div className="actions-scroll">
             <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
-            <ActionBtn title="🌭 流动摊 (500)" onClick={buyShop} color="#ffa502" disabled={income>0} />
+            <ActionBtn title="🌭 流动摊 (200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
             
+            {/* ✅ 修复确认：按钮名称恢复全称，且保留高价数值 */}
             <ActionBtn title="🏪 便利店 (5k)" onClick={() => buildBuilding('store', 5000, 15, '便利店')} color="#9b59b6" />
-            <ActionBtn title="☕ 咖啡 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
-            <ActionBtn title="⛽ 加油 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
-            <ActionBtn title="🏢 科技 (1000w)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
-            <ActionBtn title="🌆 总部 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
-            <ActionBtn title="🚀 火箭 (1000亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
+            <ActionBtn title="☕ 咖啡馆 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
+            <ActionBtn title="⛽ 加油站 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
+            <ActionBtn title="🏢 科技园 (1000w)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
+            <ActionBtn title="🌆 摩天大楼 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
+            <ActionBtn title="🚀 火箭基地 (1000亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
             
             <ActionBtn 
               title={cooldown > 0 ? `💤 ${cooldown}s` : "💤 睡觉"} 
