@@ -37,32 +37,54 @@ function SingleNPC({ startPos }) {
     if (!group.current) return
 
     const current = group.current.position
-    const dx = data.target[0] - current.x
-    const dz = data.target[2] - current.z
-    const dist = Math.sqrt(dx * dx + dz * dz)
-
-    // 🛡️ 防崩溃检查 1: 如果计算出 NaN，重置位置
-    if (isNaN(dist) || isNaN(dx) || isNaN(dz)) {
-      group.current.position.set(startPos[0], 0, startPos[2])
+    
+    // 🛡️ 防御 1：如果自身坐标坏了，重置到安全区
+    if (isNaN(current.x) || isNaN(current.z)) {
+      group.current.position.set(20, 0, 20)
       return
     }
+
+    const dx = data.target[0] - current.x
+    const dz = data.target[2] - current.z
+    // 🛡️ 防御 2：距离计算保护
+    const distSq = dx*dx + dz*dz
+    const dist = Math.sqrt(distSq)
 
     if (dist < 0.5) {
       setIsWalking(false)
       data.waitTime += delta
+      
+      // 休息够了，找新目标
       if (data.waitTime > 2 + Math.random() * 3) { 
-        const angle = Math.random() * Math.PI * 2
-        const radius = 5 + Math.random() * 15
-        data.target = [Math.sin(angle) * radius, 0, Math.cos(angle) * radius]
+        let tx, tz, lenSq
+        // 🛡️ 防御 3：生成目标点时，死循环确保不生成在 (0,0) 附近
+        // 且不生成在 NPC 当前脚下 (防止原地转身崩溃)
+        do {
+           const angle = Math.random() * Math.PI * 2
+           const radius = 8 + Math.random() * 15 // 必须在 8米外
+           tx = Math.sin(angle) * radius
+           tz = Math.cos(angle) * radius
+           
+           const ndx = tx - current.x
+           const ndz = tz - current.z
+           lenSq = ndx*ndx + ndz*ndz
+        } while (lenSq < 1.0) // 目标点必须离自己至少1米远
+
+        data.target = [tx, 0, tz]
         data.waitTime = 0
-        group.current.lookAt(data.target[0], 0, data.target[2])
+        
+        // 🛡️ 防御 4：绝对安全的 lookAt
+        // 只有当目标点真的很远时，才转身。防止原地转身导致的 NaN
+        if (lenSq > 0.1) {
+          group.current.lookAt(data.target[0], 0, data.target[2])
+        }
       }
     } else {
       setIsWalking(true)
       const moveDist = data.speed * delta
       
-      // 🛡️ 防崩溃检查 2: 只有距离足够才移动，防止除以0
-      if (dist > 0.01) {
+      // 🛡️ 防御 5：移动保护
+      if (dist > 0.1) {
         group.current.position.x += (dx / dist) * moveDist
         group.current.position.z += (dz / dist) * moveDist
       }
@@ -84,9 +106,10 @@ function SingleNPC({ startPos }) {
 export function NPCSystem() {
   const npcs = useMemo(() => {
     return new Array(NPC_COUNT).fill(0).map(() => {
-      const x = (Math.random() - 0.5) * MAP_SIZE
-      const z = (Math.random() - 0.5) * MAP_SIZE
-      return [x, 0, z]
+      // 初始生成也要避开 (0,0)
+      const angle = Math.random() * Math.PI * 2
+      const radius = 10 + Math.random() * 20
+      return [Math.sin(angle) * radius, 0, Math.cos(angle) * radius]
     })
   }, [])
 
