@@ -1,15 +1,8 @@
 /* src/GameScene.jsx */
 import React, { Suspense, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { 
-  OrbitControls, 
-  PerspectiveCamera, 
-  Environment, 
-  ContactShadows, 
-  Html 
-} from '@react-three/drei'
+import { OrbitControls, PerspectiveCamera, Environment, ContactShadows, Html } from '@react-three/drei'
 
-// 引入资源
 import { Player } from './models/Player'
 import { Shop } from './models/Shop'
 import { Tree } from './models/Tree'
@@ -19,29 +12,19 @@ import { NPCSystem } from './models/NPCs'
 import { SpeechBubble } from './models/SpeechBubble'
 import { FloatingTextManager } from './models/FloatingText'
 
-import { 
-  ConvenienceStore, CoffeeShop, GasStation, 
-  TechOffice, Skyscraper, RocketBase 
-} from './models/Buildings'
+import { ConvenienceStore, CoffeeShop, GasStation, TechOffice, Skyscraper, RocketBase } from './models/Buildings'
 
-// 1. 环境
 function EnvironmentSet() {
   return (
     <>
       <Environment preset="city" />
       <ambientLight intensity={0.8} />
-      <directionalLight 
-        position={[10, 20, 10]} 
-        intensity={1.5} 
-        castShadow 
-        shadow-mapSize={[1024, 1024]} 
-      />
+      <directionalLight position={[10, 20, 10]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} />
       <fog attach="fog" args={['#dff9fb', 30, 70]} />
     </>
   )
 }
 
-// 2. 地面
 function Ground() {
   return (
     <>
@@ -55,11 +38,12 @@ function Ground() {
   )
 }
 
-// 3. 其他玩家
-function OtherPlayer({ position, isWorking, color, name, message }) {
+// 增加 onClick 参数
+function OtherPlayer({ position, isWorking, color, name, message, onClick }) {
   if (!position || position.length < 3 || isNaN(position[0]) || isNaN(position[2])) return null
   return (
-    <group position={position}>
+    // 绑定点击事件到 group
+    <group position={position} onClick={(e) => { e.stopPropagation(); onClick() }} cursor="pointer">
       <Player isWorking={isWorking} skin={color} />
       <SpeechBubble text={message} />
       <Html position={[0, 2.2, 0]} center distanceFactor={10}>
@@ -71,30 +55,24 @@ function OtherPlayer({ position, isWorking, color, name, message }) {
   )
 }
 
-// === 主场景 ===
 export default function GameScene({ 
   isWorking, hasShop, myPosition, myColor, myMessage, 
-  otherPlayers, buildings, currentGrid, floatEvents, lang = 'zh'
+  otherPlayers, buildings, currentGrid, floatEvents, lang = 'zh',
+  onPlayerClick // <--- 新增：接收父组件传来的点击函数
 }) {
   
-  // 随机生成 80 棵树 (增加密度，效果更好)
   const trees = useMemo(() => {
     const temp = []
     for(let i=0; i<80; i++) {
       const angle = Math.random() * Math.PI * 2
-      const radius = 15 + Math.random() * 45 // 避开中心纪念碑(15米内)
-      temp.push({
-        x: Math.sin(angle) * radius,
-        z: Math.cos(angle) * radius,
-        type: Math.random() > 0.5 ? 'pine' : 'round'
-      })
+      const radius = 15 + Math.random() * 45
+      temp.push({ x: Math.sin(angle) * radius, z: Math.cos(angle) * radius, type: Math.random() > 0.5 ? 'pine' : 'round' })
     }
     return temp
   }, [])
 
   const safeMyPos = (myPosition && !isNaN(myPosition[0])) ? myPosition : [0,0,0]
 
-  // 数据清洗
   const validBuildings = useMemo(() => {
     if (!buildings) return []
     const seen = new Set()
@@ -109,7 +87,6 @@ export default function GameScene({
   return (
     <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: 'linear-gradient(to bottom, #dff9fb, #ffffff)' }}>
       <Canvas shadows="basic" dpr={[1, 1.5]}>
-        
         <PerspectiveCamera makeDefault position={[0, 12, 16]} fov={45} />
         <OrbitControls enableZoom={true} minDistance={5} maxDistance={40} target={safeMyPos} />
 
@@ -122,7 +99,6 @@ export default function GameScene({
           {currentGrid && <SelectionBox x={currentGrid.x} z={currentGrid.z} />}
           <Monument />
 
-          {/* 渲染建筑 */}
           {validBuildings.map(b => {
             const pos = [b.x, 0, b.z]
             const owner = b.owner_name || "未知富豪"
@@ -149,26 +125,31 @@ export default function GameScene({
              {hasShop && <group position={[1.5, 0, 0]}><Shop /><Html position={[0, 3, 0]} center distanceFactor={10}><div style={{color:'#f39c12', fontSize:'10px', fontWeight:'bold', whiteSpace: 'nowrap'}}>MY SHOP</div></Html></group>}
           </group>
 
+          {/* 渲染其他玩家，绑定点击事件 */}
           {otherPlayers && Object.keys(otherPlayers).map(key => {
             const p = otherPlayers[key]
             if (!p.position) return null
-            return <OtherPlayer key={key} position={p.position} color={p.skin || p.color} isWorking={p.isWorking} name={p.name} message={p.message} />
+            return (
+              <OtherPlayer 
+                key={key} 
+                position={p.position} 
+                color={p.skin || p.color} 
+                isWorking={p.isWorking} 
+                name={p.name} 
+                message={p.message}
+                // 绑定点击：把玩家数据传回去
+                onClick={() => onPlayerClick(p)} 
+              />
+            )
           })}
           
-          {/* 
-             🎄 智能树木渲染 
-             逻辑：渲染每棵树之前，检查它周围 3米内 有没有建筑。
-             如果有建筑，就不渲染这棵树 (假装被砍掉了)。
-          */}
           {trees.map((t, i) => {
              const isBlocked = validBuildings.some(b => {
                const dx = t.x - b.x
                const dz = t.z - b.z
-               return Math.sqrt(dx*dx + dz*dz) < 3.5 // 如果离建筑中心小于3.5米，就隐藏树
+               return Math.sqrt(dx*dx + dz*dz) < 3.5 
              })
-
-             if (isBlocked) return null // 被挡住了，不画
-             
+             if (isBlocked) return null 
              return <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
           })}
 

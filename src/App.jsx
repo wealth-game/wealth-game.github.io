@@ -7,6 +7,7 @@ import ProfileEditor from './ProfileEditor'
 import Leaderboard from './Leaderboard'
 import BankModal from './BankModal'
 import StockMarket from './StockMarket'
+import PlayerCard from './PlayerCard' // <--- 新增
 import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
@@ -53,20 +54,21 @@ function App() {
 }
 
 function GameWorld({ session, isGuest }) {
-  // --- 身份 ---
   const [myId] = useState(session ? session.user.id : `guest-${Math.random().toString(36).substr(2, 5)}`)
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
   
-  // --- 界面状态 ---
   const [showProfile, setShowProfile] = useState(false)
   const [showBank, setShowBank] = useState(false)
   const [showStock, setShowStock] = useState(false)
-  const [activeTab, setActiveTab] = useState('life') // 'life', 'build', 'finance'
+  
+  // 新增：选中的目标玩家
+  const [selectedPlayer, setSelectedPlayer] = useState(null)
+  
+  const [activeTab, setActiveTab] = useState('life')
   const [lang, setLang] = useState('zh') 
 
-  // --- 数值 ---
   const [cash, setCash] = useState(0)
   const [energy, setEnergy] = useState(0)
   const [income, setIncome] = useState(0)
@@ -78,7 +80,6 @@ function GameWorld({ session, isGuest }) {
   const [nextSleepTime, setNextSleepTime] = useState(0) 
   const [tick, setTick] = useState(0) 
 
-  // --- 地图 ---
   const [myPosition, setMyPosition] = useState([0, 0, 0])
   const posRef = useRef([0, 0, 0])
   const [otherPlayers, setOtherPlayers] = useState({}) 
@@ -159,6 +160,43 @@ function GameWorld({ session, isGuest }) {
     }
   }
 
+  // --- 点击玩家事件 ---
+  // 这个函数会传给 GameScene，当点击其他玩家模型时触发
+  const handlePlayerClick = (playerData) => {
+    if (playerData.userId === myId) return // 点自己没反应
+    console.log("选中玩家:", playerData)
+    setSelectedPlayer(playerData) // 弹出转账卡片
+  }
+
+  // --- P2P 转账逻辑 ---
+  const handleTransfer = async (targetUserId, amount) => {
+    if (isGuest) { alert("🔒 游客无法转账"); return }
+    if (cash < amount) { alert("❌ 余额不足"); return }
+
+    const { data, error } = await supabase.rpc('transfer_cash', {
+      sender_id: myId,
+      receiver_id: targetUserId,
+      amount: amount
+    })
+
+    if (data && data.status === 'success') {
+      setCash(prev => prev - amount)
+      triggerFloatText(`-$${amount}`, posRef.current)
+      setSelectedPlayer(null) // 关闭窗口
+      
+      // 全服广播土豪行为
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast', event: 'chat',
+          payload: { sessionId: mySessionId, text: `💰 转账给 ${data.receiver_name} $${amount}` }
+        })
+      }
+      alert(`✅ 转账成功！`)
+    } else {
+      alert(`❌ 失败: ${data?.msg || error?.message}`)
+    }
+  }
+
   const checkCollision = (targetPos) => {
     const [tx, ty, tz] = targetPos
     if (Math.abs(tx) < 3.5 && Math.abs(tz) < 3.5) return true
@@ -171,10 +209,7 @@ function GameWorld({ session, isGuest }) {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (showChat) {
-        if (e.key === 'Enter') handleSendChat()
-        return 
-      }
+      if (showChat) { if (e.key === 'Enter') handleSendChat(); return }
       if (e.key === 'Enter') { setShowChat(true); return }
       if (e.key === 'w' || e.key === 'ArrowUp') moveCharacter('up')
       if (e.key === 's' || e.key === 'ArrowDown') moveCharacter('down')
@@ -199,7 +234,7 @@ function GameWorld({ session, isGuest }) {
             const secondsPassed = (Date.now() - new Date(profile.last_active_at).getTime()) / 1000
             if (secondsPassed > 60) offlineCash = Math.floor(Math.min(secondsPassed, 86400) * profile.passive_income)
           }
-          if (offlineCash > 0) alert(`💰 离线收益: $${offlineCash.toLocaleString()}`)
+          if (offlineCash > 0) alert(`💰 欢迎回来！\n\n离线收益: $${offlineCash.toLocaleString()}`)
 
           setCash(profile.cash + offlineCash)
           setEnergy(profile.energy)
@@ -491,8 +526,9 @@ function GameWorld({ session, isGuest }) {
           isWorking={isWorking || isMoving} 
           hasShop={income > 0} 
           myPosition={myPosition} myColor={mySkin} myMessage={myMessage}
+          // ⚠️ 关键：传递 handlePlayerClick
           otherPlayers={otherPlayers} buildings={buildings} currentGrid={currentGrid}
-          floatEvents={floatEvents} lang={lang}
+          floatEvents={floatEvents} lang={lang} onPlayerClick={handlePlayerClick}
         />
       </div>
 
@@ -515,6 +551,7 @@ function GameWorld({ session, isGuest }) {
           Online: {Object.keys(otherPlayers).length + 1 + 20}
         </div>
 
+        {/* 聊天输入框 */}
         {showChat && (
           <div style={{position:'absolute', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'auto', zIndex:50}}>
              <div style={{background:'white', padding:'20px', borderRadius:'15px', width:'80%', maxWidth:'400px'}}>
@@ -535,6 +572,16 @@ function GameWorld({ session, isGuest }) {
           <button onClick={() => setShowChat(true)} style={{position:'absolute', right:'20px', bottom:'180px', width:'50px', height:'50px', borderRadius:'50%', background:'white', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.2)', fontSize:'24px', cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'}}>💬</button>
         )}
 
+        {/* 交易弹窗 (Transfer) */}
+        {selectedPlayer && (
+          <PlayerCard 
+            targetPlayer={selectedPlayer} 
+            onClose={() => setSelectedPlayer(null)} 
+            onTransfer={handleTransfer}
+          />
+        )}
+
+        {/* 店铺交互弹窗 */}
         {activeShop && (
            <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'}}>
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
@@ -584,7 +631,6 @@ function GameWorld({ session, isGuest }) {
              <div style={{color:'#ffa502'}}>+{income.toLocaleString()}/s</div>
           </div>
           
-          {/* ✅ 修复：使用【选项卡布局】，彻底解决按钮拥挤问题 */}
           <div className="control-panel">
             <div className="tabs">
               <button className={`tab-btn ${activeTab==='life'?'active':''}`} onClick={()=>setActiveTab('life')}>🔨 生活</button>
@@ -593,11 +639,10 @@ function GameWorld({ session, isGuest }) {
             </div>
             
             <div className="actions-area">
-              {/* 生活 Tab */}
               {activeTab === 'life' && (
                 <>
                   <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
-                  <ActionBtn title="🌭 流动摊 ($200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
+                  <ActionBtn title="🌭 流动摊 (200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
                   <ActionBtn 
                     title={cooldown > 0 ? `💤 冷却 (${cooldown}s)` : "💤 睡觉"} 
                     onClick={sleep} 
@@ -607,7 +652,6 @@ function GameWorld({ session, isGuest }) {
                 </>
               )}
 
-              {/* 建造 Tab (分类清晰) */}
               {activeTab === 'build' && (
                 <>
                   <ActionBtn title="🏪 便利店 (5k)" onClick={() => buildBuilding('store', 5000, 15, '便利店')} color="#9b59b6" />
@@ -619,7 +663,6 @@ function GameWorld({ session, isGuest }) {
                 </>
               )}
 
-              {/* 金融 Tab */}
               {activeTab === 'finance' && (
                 <>
                   <ActionBtn title="🏦 中央银行" onClick={() => setShowBank(true)} color="#2c3e50" />
