@@ -8,7 +8,7 @@ import Leaderboard from './Leaderboard'
 import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
-const MAX_LEVEL = 6 // ⬇️ 修改为 6级封顶
+const MAX_LEVEL = 6 
 
 // 随机出生点
 const getRandomSpawn = () => {
@@ -20,6 +20,19 @@ const getSafeSpawnAround = (x, z) => {
   const angle = Math.random() * Math.PI * 2
   const distance = 3.5 
   return [x + Math.sin(angle) * distance, 0, z + Math.cos(angle) * distance]
+}
+
+// 🛡️【关键修复】：定义翻译函数，防止报错
+const getBuildingName = (type) => {
+  const map = { 
+    store: '便利店', 
+    coffee: '咖啡馆', 
+    gas: '加油站', 
+    office: '科技园', 
+    tower: '摩天楼', 
+    rocket: '发射场' 
+  }
+  return map[type] || '建筑'
 }
 
 function App() {
@@ -184,7 +197,7 @@ function GameWorld({ session, isGuest }) {
             const secondsPassed = (Date.now() - new Date(profile.last_active_at).getTime()) / 1000
             if (secondsPassed > 60) offlineCash = Math.floor(Math.min(secondsPassed, 86400) * profile.passive_income)
           }
-          if (offlineCash > 0) alert(`💰 离线收益: $${offlineCash.toLocaleString()}`)
+          if (offlineCash > 0) alert(`💰 欢迎回来！\n\n离线收益: $${offlineCash.toLocaleString()}`)
 
           setCash(profile.cash + offlineCash); setEnergy(profile.energy); setIncome(profile.passive_income || 0)
           if (profile.nickname) setMyName(profile.nickname)
@@ -201,6 +214,7 @@ function GameWorld({ session, isGuest }) {
       joinMultiplayerRoom(myId, spawnPos)
     }
     initGame()
+    
     return () => { 
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current)
@@ -317,7 +331,7 @@ function GameWorld({ session, isGuest }) {
     alert(`✅ 形象已更新`)
   }
 
-  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式\n\n请注册账号！"); return true } return false }
+  const checkGuest = () => { if (isGuest) { alert("🔒 请注册账号"); return true } return false }
   
   const work = async () => {
     if (checkGuest()) return
@@ -359,7 +373,9 @@ function GameWorld({ session, isGuest }) {
       if (data) {
         homePos = getSafeSpawnAround(data.x, data.z)
         alert("🏠 欢迎回家")
-      } else { alert("🏠 暂无房产，传送至安全区") }
+      } else {
+        alert("🏠 暂无房产，传送至安全区")
+      }
       setMyPosition(homePos); posRef.current = homePos
       fetchNearbyBuildings(homePos[0], homePos[2]); lastFetchPos.current = homePos
       setCurrentGrid({x: Math.round(homePos[0]), z: Math.round(homePos[2])}); setActiveShop(null) 
@@ -386,6 +402,7 @@ function GameWorld({ session, isGuest }) {
     await supabase.from('buildings').insert({ owner_id: myId, type: type, x: currentGrid.x, z: currentGrid.z, level: 1 })
   }
 
+  // 购买/升级
   const handlePurchase = async () => {
     if (checkGuest()) return
     if (!activeShop) return
@@ -427,6 +444,12 @@ function GameWorld({ session, isGuest }) {
   if (loading) return <div className="loading-screen"><div className="spinner"></div></div>
 
   const cooldown = Math.ceil((nextSleepTime - Date.now()) / 1000)
+
+  // 辅助函数：根据类型获取中文名
+  const getBuildingName = (type) => {
+    const map = { store: '便利店', coffee: '咖啡馆', gas: '加油站', office: '科技园', tower: '摩天楼', rocket: '发射场' }
+    return map[type] || '建筑'
+  }
 
   return (
     <div className="app-container">
@@ -483,6 +506,7 @@ function GameWorld({ session, isGuest }) {
           <button onClick={() => setShowChat(true)} style={{position:'absolute', right:'20px', bottom:'180px', width:'50px', height:'50px', borderRadius:'50%', background:'white', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.2)', fontSize:'24px', cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'}}>💬</button>
         )}
 
+        {/* 交互弹窗 (修复了 getBuildingName 调用) */}
         {activeShop && (
            <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'}}>
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
@@ -531,13 +555,14 @@ function GameWorld({ session, isGuest }) {
           </div>
           <div className="actions-scroll">
             <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
-            <ActionBtn title="🌭 流动摊 (200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
+            <ActionBtn title="🌭 流动摊 (500)" onClick={buyShop} color="#ffa502" disabled={income>0} />
+            
             <ActionBtn title="🏪 便利店 (5k)" onClick={() => buildBuilding('store', 5000, 15, '便利店')} color="#9b59b6" />
-            <ActionBtn title="☕ 咖啡馆 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
-            <ActionBtn title="⛽ 加油站 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
-            <ActionBtn title="🏢 科技园 (1000w)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
-            <ActionBtn title="🌆 摩天大楼 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
-            <ActionBtn title="🚀 火箭基地 (1000亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
+            <ActionBtn title="☕ 咖啡 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
+            <ActionBtn title="⛽ 加油 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
+            <ActionBtn title="🏢 科技 (1000w)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
+            <ActionBtn title="🌆 总部 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
+            <ActionBtn title="🚀 火箭 (1000亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
             
             <ActionBtn 
               title={cooldown > 0 ? `💤 ${cooldown}s` : "💤 睡觉"} 
