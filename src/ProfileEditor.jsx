@@ -3,7 +3,6 @@ import React, { useState } from 'react'
 
 export default function ProfileEditor({ initialName, initialSkin, onSave, onClose }) {
   const [name, setName] = useState(initialName)
-  // 确保所有字段都有默认值
   const [skin, setSkin] = useState({
     head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", 
     hair: "#2c3e50", shoes: "#333333",
@@ -24,6 +23,8 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
       <input 
         type="color" 
         value={skin[part]} 
+        // 关键修复：阻止事件冒泡，防止误触关闭
+        onClick={(e) => e.stopPropagation()}
         onChange={e => handleColorChange(part, e.target.value)} 
         style={{cursor:'pointer', width:'40px', height:'30px', border:'none', padding:0}}
       />
@@ -31,17 +32,23 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
   )
 
   return (
-    <div style={styles.overlay}>
-      <div style={styles.card}>
+    // 点击遮罩层关闭
+    <div style={styles.overlay} onClick={onClose}>
+      {/* 关键修复：点击卡片内部不关闭 */}
+      <div style={styles.card} onClick={(e) => e.stopPropagation()}>
         <h2 style={{marginTop:0}}>🎨 形象定制</h2>
         
         <div style={styles.formGroup}>
           <label>你的名字</label>
-          <input style={styles.input} value={name} onChange={e => setName(e.target.value)} maxLength={10} />
+          <input 
+            style={styles.input} 
+            value={name} 
+            onChange={e => setName(e.target.value)} 
+            maxLength={10}
+          />
         </div>
 
         <div style={styles.preview}>
-           {/* 简单的色块预览，增加头发和鞋子 */}
            <div style={{...styles.colorBlock, background: skin.hair, color:'white'}}>发</div>
            <div style={{...styles.colorBlock, background: skin.head}}>脸</div>
            <div style={{...styles.colorBlock, background: skin.body, color:'white'}}>衣</div>

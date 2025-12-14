@@ -9,14 +9,12 @@ import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
 
-// 随机出生点 (避开中心纪念碑 6米范围)
+// 随机出生点
 const getRandomSpawn = () => {
   const angle = Math.random() * Math.PI * 2
   const radius = 6 + Math.random() * 4
   return [Math.sin(angle) * radius, 0, Math.cos(angle) * radius]
 }
-
-// 安全出生点 (偏移)
 const getSafeSpawnAround = (x, z) => {
   const angle = Math.random() * Math.PI * 2
   const distance = 3.5 
@@ -43,17 +41,12 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  if (isAuthLoading) return <div className="loading-screen">Loading World...</div>
-
-  if (!session && !isGuest) {
-    return <Auth onGuestClick={() => setIsGuest(true)} />
-  }
-
+  if (isAuthLoading) return <div className="loading-screen">Loading...</div>
+  if (!session && !isGuest) return <Auth onGuestClick={() => setIsGuest(true)} />
   return <GameWorld session={session} isGuest={isGuest} />
 }
 
 function GameWorld({ session, isGuest }) {
-  // --- 身份 ---
   const [myId] = useState(session ? session.user.id : `guest-${Math.random().toString(36).substr(2, 5)}`)
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
@@ -61,34 +54,34 @@ function GameWorld({ session, isGuest }) {
   const [showProfile, setShowProfile] = useState(false)
   const [lang, setLang] = useState('zh') 
 
-  // --- 数值 ---
   const [cash, setCash] = useState(0)
   const [energy, setEnergy] = useState(0)
   const [income, setIncome] = useState(0)
   const [loading, setLoading] = useState(true)
   const [isWorking, setIsWorking] = useState(false)
+  
+  // --- 新增：移动状态，用于控制动画 ---
+  const [isMoving, setIsMoving] = useState(false)
+  
   const [isConnected, setIsConnected] = useState(false)
   const [nextSleepTime, setNextSleepTime] = useState(0) 
-  const [tick, setTick] = useState(0) // 用于强制刷新UI的秒表
+  const [tick, setTick] = useState(0)
 
-  // --- 地图 ---
   const [myPosition, setMyPosition] = useState([0, 0, 0])
   const posRef = useRef([0, 0, 0])
   const [otherPlayers, setOtherPlayers] = useState({}) 
   const [buildings, setBuildings] = useState([]) 
   const [currentGrid, setCurrentGrid] = useState({x: 0, z: 0}) 
   const [activeShop, setActiveShop] = useState(null) 
-  
-  // --- 交互 ---
   const [myMessage, setMyMessage] = useState("") 
   const [chatInput, setChatInput] = useState("") 
   const [showChat, setShowChat] = useState(false) 
   const [floatEvents, setFloatEvents] = useState([]) 
   
-  // --- 配置 ---
   const lastFetchPos = useRef([9999, 9999, 9999])
   const FETCH_THRESHOLD = 20 
   const VIEW_DISTANCE = 80 
+  const stopMovingTimer = useRef(null) // 用于防抖停止动画
   
   const incomeRef = useRef(income)
   const cashRef = useRef(cash)
@@ -99,19 +92,22 @@ function GameWorld({ session, isGuest }) {
   useEffect(() => { incomeRef.current = income }, [income])
   useEffect(() => { cashRef.current = cash }, [cash])
 
-  // --- 辅助功能 ---
-  const triggerFloatText = (text, position) => {
-    setFloatEvents(prev => [...prev, { text, pos: position }])
-  }
+  const triggerFloatText = (text, position) => setFloatEvents(prev => [...prev, { text, pos: position }])
 
-  // --- 1. 地图加载 ---
   const fetchNearbyBuildings = async (x, z) => {
     const { data } = await supabase.rpc('get_nearby_buildings', { center_x: x, center_z: z, radius: VIEW_DISTANCE })
     if (data) setBuildings(data)
   }
 
-  // --- 2. 移动逻辑 ---
   const moveCharacter = (direction) => {
+    // 1. 设置为正在移动 (播放动画)
+    setIsMoving(true)
+    
+    // 清除停止计时器
+    if (stopMovingTimer.current) clearTimeout(stopMovingTimer.current)
+    // 200ms 后如果没有新的移动指令，就停止动画
+    stopMovingTimer.current = setTimeout(() => setIsMoving(false), 200)
+
     const speed = 0.8 
     const [x, y, z] = posRef.current
     let newPos = [...posRef.current]
@@ -177,66 +173,47 @@ function GameWorld({ session, isGuest }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [buildings, myId, showChat, chatInput])
 
-  // --- 3. 初始化 ---
   useEffect(() => {
     async function initGame() {
       let spawnPos = getRandomSpawn()
-
       if (!isGuest) {
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', myId).single()
-        
         if (profile) {
-          // 尝试回家
           const { data: home } = await supabase.from('buildings').select('x, z').eq('owner_id', myId).order('created_at', { ascending: true }).limit(1).single()
-          if (home) {
-            spawnPos = getSafeSpawnAround(home.x, home.z) // 使用安全偏移
-            console.log("🏠 欢迎回家")
-          }
-
-          // 计算离线收益
+          if (home) spawnPos = getSafeSpawnAround(home.x, home.z)
+          
           let offlineCash = 0
           if (profile.last_active_at && profile.passive_income > 0) {
-            const lastActive = new Date(profile.last_active_at).getTime()
-            const now = Date.now()
-            const secondsPassed = (now - lastActive) / 1000
-            const validSeconds = Math.min(secondsPassed, 24 * 3600)
-            
-            if (validSeconds > 60) {
-              offlineCash = Math.floor(validSeconds * profile.passive_income)
-              alert(`💰 欢迎回来！\n\n离线收益: $${offlineCash.toLocaleString()}`)
-            }
+            const secondsPassed = (Date.now() - new Date(profile.last_active_at).getTime()) / 1000
+            if (secondsPassed > 60) offlineCash = Math.floor(Math.min(secondsPassed, 86400) * profile.passive_income)
           }
+          if (offlineCash > 0) alert(`💰 离线收益: $${offlineCash.toLocaleString()}`)
 
-          setCash(profile.cash + offlineCash)
-          setEnergy(profile.energy)
-          setIncome(profile.passive_income || 0)
+          setCash(profile.cash + offlineCash); setEnergy(profile.energy); setIncome(profile.passive_income || 0)
           if (profile.nickname) setMyName(profile.nickname)
           if (profile.avatar) setMySkin(profile.avatar)
-
-          await supabase.from('profiles').update({ 
-            cash: profile.cash + offlineCash,
-            last_active_at: new Date().toISOString()
-          }).eq('id', myId)
+          
+          await supabase.from('profiles').update({ cash: profile.cash + offlineCash, last_active_at: new Date().toISOString() }).eq('id', myId)
         }
       } else {
-        setCash(0); setEnergy(100); setIncome(0)
-        setMyName(`游客${myId.substr(myId.length-4)}`)
+        setCash(0); setEnergy(100); setIncome(0); setMyName(`游客${myId.substr(myId.length-4)}`)
       }
 
-      setLoading(false)
-      setMyPosition(spawnPos)
-      posRef.current = spawnPos
-      
-      fetchNearbyBuildings(spawnPos[0], spawnPos[2])
-      lastFetchPos.current = spawnPos
+      setLoading(false); setMyPosition(spawnPos); posRef.current = spawnPos
+      fetchNearbyBuildings(spawnPos[0], spawnPos[2]); lastFetchPos.current = spawnPos
       joinMultiplayerRoom(myId, spawnPos)
     }
     initGame()
     
-    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+    // --- 关键修复：组件卸载时断开连接，防止分身 ---
+    return () => { 
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
+        channelRef.current = null
+      }
+    }
   }, [isGuest, myId]) 
 
-  // 心跳更新 last_active_at
   useEffect(() => {
     if (isGuest) return
     const activeTimer = setInterval(() => {
@@ -245,25 +222,22 @@ function GameWorld({ session, isGuest }) {
     return () => clearInterval(activeTimer)
   }, [isGuest, myId])
 
-  // --- 4. 多人连接 ---
   const joinMultiplayerRoom = (userId, position) => {
-    if (channelRef.current) return
+    if (channelRef.current) return // 防止重复连接
 
     const channel = supabase.channel('game_room', { config: { presence: { key: mySessionId } } })
 
     channel
       .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState()
-        setOtherPlayers(prev => {
-          const next = { ...prev }
-          for (let key in newState) {
-            if (key !== mySessionId) {
-               const user = newState[key][0]
-               if (user) next[key] = { ...user, message: next[key]?.message || null }
-            }
+        const players = {}
+        for (let key in newState) {
+          if (key !== mySessionId) {
+             const user = newState[key][0]
+             if (user) players[key] = user
           }
-          return next
-        })
+        }
+        setOtherPlayers(players)
       })
       .on('broadcast', { event: 'chat' }, ({ payload }) => {
         setOtherPlayers(prev => {
@@ -308,66 +282,55 @@ function GameWorld({ session, isGuest }) {
       let shouldSend = true
       if (lastPos) {
         const dist = Math.sqrt((currentPos[0]-lastPos[0])**2 + (currentPos[2]-lastPos[2])**2)
-        if (dist < 0.01 && !isWorking) shouldSend = false
+        // 移动少于0.01米 且 没有在干活 且 没有在移动(动画) -> 不发送
+        if (dist < 0.01 && !isWorking && !isMoving) shouldSend = false
       }
       if (shouldSend) {
         channelRef.current.track({ 
           sessionId: mySessionId, userId: myId, position: currentPos, 
-          skin: mySkin, name: myName, isWorking: isWorking
+          skin: mySkin, name: myName, 
+          // 关键：告诉别人我是否在“动”(跑步动画) 或 “干活”(工作动画)
+          isWorking: isWorking || isMoving 
         })
         lastSentPosRef.current = currentPos
       }
     }, 200)
     return () => clearInterval(syncInterval)
-  }, [isConnected, isWorking, mySkin, myName, myId])
+  }, [isConnected, isWorking, isMoving, mySkin, myName, myId]) // 依赖 isMoving
 
-  // --- 自动赚钱循环 + UI刷新 ---
   useEffect(() => {
     const timer = setInterval(() => {
-      // 1. 加钱
       if (incomeRef.current > 0) setCash(prev => prev + parseFloat(incomeRef.current))
-      // 2. 触发重绘 (让倒计时动起来)
       setTick(t => t + 1)
     }, 1000)
     
-    // 3. 自动保存 (每30秒)
     const saveTimer = setInterval(async () => {
       if (!isGuest && incomeRef.current > 0) {
-        await supabase.from('profiles').update({ 
-          cash: cashRef.current,
-          last_active_at: new Date().toISOString()
-        }).eq('id', myId)
+        await supabase.from('profiles').update({ cash: cashRef.current, last_active_at: new Date().toISOString() }).eq('id', myId)
       }
     }, 30000)
-
-    return () => {
-      clearInterval(timer)
-      clearInterval(saveTimer)
-    }
+    return () => { clearInterval(timer); clearInterval(saveTimer) }
   }, [isGuest, myId])
 
-  // --- 业务操作 ---
   const handleSaveProfile = async (newName, newSkin) => {
     if (isGuest) { alert("🔒 游客模式无法保存"); return }
     if (!newName || newName.trim() === "") { alert("❌ 名字不能为空"); return }
-    
     const { error } = await supabase.from('profiles').update({ nickname: newName, avatar: newSkin }).eq('id', myId)
     if (error && error.code === '23505') { alert(`❌ "${newName}" 已被占用`); return }
-    
     setMyName(newName); setMySkin(newSkin); setShowProfile(false)
     if (channelRef.current) {
-      channelRef.current.track({ sessionId: mySessionId, userId: myId, position: posRef.current, skin: newSkin, name: newName, isWorking: isWorking })
+      channelRef.current.track({ sessionId: mySessionId, userId: myId, position: posRef.current, skin: newSkin, name: newName, isWorking: isWorking||isMoving })
     }
     alert(`✅ 形象已更新`)
   }
 
-  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式\n\n请注册账号！"); return true } return false }
+  const checkGuest = () => { if (isGuest) { alert("🔒 请注册账号"); return true } return false }
   
   const work = async () => {
     if (checkGuest()) return
     if (energy >= 10) {
       setIsWorking(true); setTimeout(() => setIsWorking(false), 500)
-      const newCash = cash + 5; const newEnergy = energy - 10 // 调整：搬砖只给5块
+      const newCash = cash + 5; const newEnergy = energy - 10
       setCash(newCash); setEnergy(newEnergy)
       await supabase.from('profiles').update({ cash: newCash, energy: newEnergy }).eq('id', myId)
       if(navigator.vibrate) navigator.vibrate(20)
@@ -377,12 +340,12 @@ function GameWorld({ session, isGuest }) {
 
   const buyShop = async () => {
       if (checkGuest()) return
-      const cost = 500 // 涨价
+      const cost = 500
       if (cash >= cost) {
-        const newCash = cash - cost; const newIncome = income + 2 // 降收益
+        const newCash = cash - cost; const newIncome = income + 2
         setCash(newCash); setIncome(newIncome)
         await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
-        triggerFloatText(`-$${cost}`, posRef.current)
+        triggerFloatText("-$500", posRef.current)
         alert("已购买流动摊位")
       } else { alert(`钱不够，需要 $${cost}`) }
   }
@@ -390,12 +353,9 @@ function GameWorld({ session, isGuest }) {
   const sleep = async () => { 
       if (checkGuest()) return
       const now = Date.now()
-      if (now < nextSleepTime) {
-        // 倒计时由 UI 的 tick 驱动自动刷新
-        return
-      }
+      if (now < nextSleepTime) return
       setEnergy(100)
-      setNextSleepTime(now + 60000) // 60秒冷却
+      setNextSleepTime(now + 60000)
       await supabase.from('profiles').update({ energy: 100 }).eq('id', myId)
       triggerFloatText("⚡精力满", posRef.current)
   }
@@ -406,9 +366,7 @@ function GameWorld({ session, isGuest }) {
       if (data) {
         homePos = getSafeSpawnAround(data.x, data.z)
         alert("🏠 欢迎回家")
-      } else {
-        alert("🏠 暂无房产，传送至安全区")
-      }
+      } else { alert("🏠 暂无房产，传送至安全区") }
       setMyPosition(homePos); posRef.current = homePos
       fetchNearbyBuildings(homePos[0], homePos[2]); lastFetchPos.current = homePos
       setCurrentGrid({x: Math.round(homePos[0]), z: Math.round(homePos[2])}); setActiveShop(null) 
@@ -428,7 +386,6 @@ function GameWorld({ session, isGuest }) {
     setBuildings(prev => [...prev, tempB])
     triggerFloatText(`-$${cost}`, posRef.current)
 
-    // 弹开
     const escapePos = [posRef.current[0] + 2, 0, posRef.current[2]]
     setMyPosition(escapePos); posRef.current = escapePos
 
@@ -453,7 +410,6 @@ function GameWorld({ session, isGuest }) {
 
   if (loading) return <div className="loading-screen"><div className="spinner"></div></div>
 
-  // 计算倒计时秒数
   const cooldown = Math.ceil((nextSleepTime - Date.now()) / 1000)
 
   return (
@@ -464,7 +420,9 @@ function GameWorld({ session, isGuest }) {
 
       <div className="scene-container">
         <GameScene 
-          isWorking={isWorking} hasShop={income > 0} 
+          // 关键：将 isMoving 传递给 isWorking，让 Scene 知道要播放跑动动画
+          isWorking={isWorking || isMoving} 
+          hasShop={income > 0} 
           myPosition={myPosition} myColor={mySkin} myMessage={myMessage}
           otherPlayers={otherPlayers} buildings={buildings} currentGrid={currentGrid}
           floatEvents={floatEvents} lang={lang}
@@ -529,7 +487,6 @@ function GameWorld({ session, isGuest }) {
 
         <div className="bottom-controls">
           <div className="stats-card">
-             {/* 显示逗号分隔的金钱格式 */}
              <div>$ {Math.floor(cash).toLocaleString()}</div>
              <div>⚡ {energy}</div>
              <div style={{color:'#ffa502'}}>+{income.toLocaleString()}/s</div>
@@ -537,18 +494,14 @@ function GameWorld({ session, isGuest }) {
           <div className="actions-scroll">
             <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
             <ActionBtn title="🌭 流动摊 (500)" onClick={buyShop} color="#ffa502" disabled={income>0} />
-            
-            {/* === 重新定价的建筑 === */}
             <ActionBtn title="🏪 便利店 (5k)" onClick={() => buildBuilding('store', 5000, 15, '便利店')} color="#9b59b6" />
             <ActionBtn title="☕ 咖啡 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
             <ActionBtn title="⛽ 加油 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
             <ActionBtn title="🏢 科技 (1000w)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
             <ActionBtn title="🌆 总部 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
             <ActionBtn title="🚀 火箭 (1000亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
-            
-            {/* 修复后的睡觉按钮 */}
             <ActionBtn 
-              title={cooldown > 0 ? `💤 冷却 (${cooldown}s)` : "💤 睡觉"} 
+              title={cooldown > 0 ? `💤 ${cooldown}s` : "💤 睡觉"} 
               onClick={sleep} 
               color="#2ed573" 
               disabled={cooldown > 0}
