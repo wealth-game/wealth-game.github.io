@@ -57,6 +57,9 @@ function Ground() {
 
 // 3. 其他玩家
 function OtherPlayer({ position, isWorking, color, name, message }) {
+  // 安全检查：如果坐标无效，不渲染
+  if (!position || isNaN(position[0]) || isNaN(position[2])) return null
+
   return (
     <group position={position}>
       <Player isWorking={isWorking} skin={color} />
@@ -76,12 +79,12 @@ export default function GameScene({
   otherPlayers, buildings, currentGrid, floatEvents, lang = 'zh'
 }) {
   
-  // --- 随机生成一片森林 ---
+  // 随机森林
   const trees = useMemo(() => {
     const temp = []
-    for(let i=0; i<50; i++) { // 增加到50棵树
+    for(let i=0; i<50; i++) {
       const angle = Math.random() * Math.PI * 2
-      const radius = 15 + Math.random() * 40 // 分布在 15-55米，不挡住中心
+      const radius = 15 + Math.random() * 40
       temp.push({
         x: Math.sin(angle) * radius,
         z: Math.cos(angle) * radius,
@@ -91,30 +94,40 @@ export default function GameScene({
     return temp
   }, [])
 
+  // 安全检查：如果我的位置崩了，强制归零
+  const safeMyPos = (myPosition && !isNaN(myPosition[0])) ? myPosition : [0,0,0]
+
   return (
     <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: 'linear-gradient(to bottom, #dff9fb, #ffffff)' }}>
       <Canvas shadows="basic" dpr={[1, 2]}>
         
         <PerspectiveCamera makeDefault position={[0, 12, 16]} fov={45} />
-        <OrbitControls enableZoom={true} minDistance={5} maxDistance={40} target={myPosition} />
+        <OrbitControls enableZoom={true} minDistance={5} maxDistance={40} target={safeMyPos} />
 
         <Suspense fallback={<Html center>Loading...</Html>}>
           <EnvironmentSet />
           <Ground />
           <FloatingTextManager events={floatEvents} />
+          
+          {/* NPC 系统 (内部已做安全检查) */}
           <NPCSystem />
           
-          {currentGrid && <SelectionBox x={myPosition[0]} z={myPosition[2]} />}
+          {currentGrid && <SelectionBox x={currentGrid.x} z={currentGrid.z} />}
           <Monument />
 
-          {/* 渲染建筑 (带名字和语言) */}
+          {/* === 渲染建筑 (增加超级安全过滤) === */}
           {buildings && buildings.map(b => {
+            // 🚨 核心修复：如果坐标是 null 或 NaN，直接跳过，防止崩坏
+            if (b.x === null || b.z === null || isNaN(b.x) || isNaN(b.z)) return null;
+
             const pos = [b.x, 0, b.z]
             const owner = b.owner_name || "未知富豪"
-            // 🔒 强制安全转换：如果是空，就设为1
-            const level = b.level ? Number(b.level) : 1 
+            const level = b.level ? Number(b.level) : 1
+            
+            // 安全的类型检查
+            const type = b.type || 'store'
 
-            switch(b.type) {
+            switch(type) {
               case 'store':  return <ConvenienceStore key={b.id} position={pos} lang={lang} owner={owner} level={level} />
               case 'coffee': return <CoffeeShop key={b.id} position={pos} lang={lang} owner={owner} level={level} />
               case 'gas':    return <GasStation key={b.id} position={pos} lang={lang} owner={owner} level={level} />
@@ -125,7 +138,7 @@ export default function GameScene({
             }
           })}
 
-          <group position={myPosition}>
+          <group position={safeMyPos}>
              <Player isWorking={isWorking} skin={myColor} />
              <SpeechBubble text={myMessage} />
              <Html position={[0, 2.2, 0]} center distanceFactor={10}>
@@ -136,10 +149,10 @@ export default function GameScene({
 
           {otherPlayers && Object.keys(otherPlayers).map(key => {
             const p = otherPlayers[key]
+            if (!p.position) return null // 过滤坏数据
             return <OtherPlayer key={key} position={p.position} color={p.skin || p.color} isWorking={p.isWorking} name={p.name} message={p.message} />
           })}
           
-          {/* 渲染大量树木 */}
           {trees.map((t, i) => (
             <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
           ))}

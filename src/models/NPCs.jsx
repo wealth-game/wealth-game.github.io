@@ -4,22 +4,21 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { Player } from './Player'
 
-const NPC_COUNT = 20
-const MAP_SIZE = 40
+const NPC_COUNT = 20 
+const MAP_SIZE = 40 
 
 const names = ["市民", "游客", "散户", "打工人", "路人", "外卖员", "中介", "极客"]
 const getRandomName = () => `${names[Math.floor(Math.random() * names.length)]} ${Math.floor(Math.random() * 999)}`
 const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
 
-// 升级随机皮肤生成器
 const randomSkin = () => ({
   head: Math.random() > 0.5 ? "#ffccaa" : "#8d5524",
   body: randomColor(),
   legs: randomColor(),
   eyes: "#000000",
   backpack: randomColor(),
-  hair: Math.random() > 0.3 ? "#333333" : randomColor(), // 大部分黑发，偶尔染发
-  shoes: Math.random() > 0.5 ? "#333333" : "#ffffff" // 黑鞋或白鞋
+  hair: Math.random() > 0.3 ? "#333333" : randomColor(),
+  shoes: Math.random() > 0.5 ? "#333333" : "#ffffff"
 })
 
 function SingleNPC({ startPos }) {
@@ -27,15 +26,16 @@ function SingleNPC({ startPos }) {
   const [isWalking, setIsWalking] = useState(false)
   
   const data = useMemo(() => ({
-    target: [startPos[0], 0, startPos[2]],
+    target: [startPos[0], 0, startPos[2]], 
     speed: 0.5 + Math.random() * 1.5,
-    skin: randomSkin(), // 使用新版皮肤生成器
+    skin: randomSkin(),
     name: getRandomName(),
     waitTime: 0
   }), [])
 
   useFrame((state, delta) => {
     if (!group.current) return
+
     const current = group.current.position
     const dx = data.target[0] - current.x
     const dz = data.target[2] - current.z
@@ -46,7 +46,7 @@ function SingleNPC({ startPos }) {
       data.waitTime += delta
       if (data.waitTime > 2 + Math.random() * 3) { 
         const angle = Math.random() * Math.PI * 2
-        const radius = 5 + Math.random() * 15
+        const radius = 5 + Math.random() * 15 
         data.target = [Math.sin(angle) * radius, 0, Math.cos(angle) * radius]
         data.waitTime = 0
         group.current.lookAt(data.target[0], 0, data.target[2])
@@ -54,8 +54,12 @@ function SingleNPC({ startPos }) {
     } else {
       setIsWalking(true)
       const moveDist = data.speed * delta
-      group.current.position.x += (dx / dist) * moveDist
-      group.current.position.z += (dz / dist) * moveDist
+      
+      // 🚨 关键修复：防止除以0导致的 NaN/Infinity 崩溃
+      if (dist > 0.001) {
+        group.current.position.x += (dx / dist) * moveDist
+        group.current.position.z += (dz / dist) * moveDist
+      }
     }
   })
 
