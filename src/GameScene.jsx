@@ -9,7 +9,6 @@ import {
   Html 
 } from '@react-three/drei'
 
-// 引入资源
 import { Player } from './models/Player'
 import { Shop } from './models/Shop'
 import { Tree } from './models/Tree'
@@ -24,7 +23,6 @@ import {
   TechOffice, Skyscraper, RocketBase 
 } from './models/Buildings'
 
-// 1. 环境
 function EnvironmentSet() {
   return (
     <>
@@ -41,7 +39,6 @@ function EnvironmentSet() {
   )
 }
 
-// 2. 地面
 function Ground() {
   return (
     <>
@@ -55,10 +52,11 @@ function Ground() {
   )
 }
 
-// 3. 其他玩家
 function OtherPlayer({ position, isWorking, color, name, message }) {
-  // 安全检查：如果坐标无效，不渲染
-  if (!position || isNaN(position[0]) || isNaN(position[2])) return null
+  // 🛡️【关键修复】：如果坐标不存在或无效，直接不渲染，防止白屏
+  if (!position || position.length < 3 || isNaN(position[0]) || isNaN(position[2])) {
+    return null
+  }
 
   return (
     <group position={position}>
@@ -73,18 +71,17 @@ function OtherPlayer({ position, isWorking, color, name, message }) {
   )
 }
 
-// === 主场景 ===
 export default function GameScene({ 
   isWorking, hasShop, myPosition, myColor, myMessage, 
   otherPlayers, buildings, currentGrid, floatEvents, lang = 'zh'
 }) {
   
-  // 随机森林
+  // 生成森林
   const trees = useMemo(() => {
     const temp = []
     for(let i=0; i<50; i++) {
       const angle = Math.random() * Math.PI * 2
-      const radius = 15 + Math.random() * 40
+      const radius = 15 + Math.random() * 40 
       temp.push({
         x: Math.sin(angle) * radius,
         z: Math.cos(angle) * radius,
@@ -94,7 +91,7 @@ export default function GameScene({
     return temp
   }, [])
 
-  // 安全检查：如果我的位置崩了，强制归零
+  // 🛡️【关键修复】：确保我的位置也是安全的
   const safeMyPos = (myPosition && !isNaN(myPosition[0])) ? myPosition : [0,0,0]
 
   return (
@@ -109,22 +106,19 @@ export default function GameScene({
           <Ground />
           <FloatingTextManager events={floatEvents} />
           
-          {/* NPC 系统 (内部已做安全检查) */}
           <NPCSystem />
           
           {currentGrid && <SelectionBox x={currentGrid.x} z={currentGrid.z} />}
           <Monument />
 
-          {/* === 渲染建筑 (增加超级安全过滤) === */}
+          {/* === 渲染建筑 (安全版) === */}
           {buildings && buildings.map(b => {
-            // 🚨 核心修复：如果坐标是 null 或 NaN，直接跳过，防止崩坏
+            // 🛡️【关键修复】：过滤脏数据，坐标无效的建筑直接跳过
             if (b.x === null || b.z === null || isNaN(b.x) || isNaN(b.z)) return null;
 
             const pos = [b.x, 0, b.z]
             const owner = b.owner_name || "未知富豪"
             const level = b.level ? Number(b.level) : 1
-            
-            // 安全的类型检查
             const type = b.type || 'store'
 
             switch(type) {
@@ -147,9 +141,9 @@ export default function GameScene({
              {hasShop && <group position={[1.5, 0, 0]}><Shop /><Html position={[0, 3, 0]} center distanceFactor={10}><div style={{color:'#f39c12', fontSize:'10px', fontWeight:'bold', whiteSpace: 'nowrap'}}>MY SHOP</div></Html></group>}
           </group>
 
+          {/* 渲染其他玩家 (安全版) */}
           {otherPlayers && Object.keys(otherPlayers).map(key => {
             const p = otherPlayers[key]
-            if (!p.position) return null // 过滤坏数据
             return <OtherPlayer key={key} position={p.position} color={p.skin || p.color} isWorking={p.isWorking} name={p.name} message={p.message} />
           })}
           

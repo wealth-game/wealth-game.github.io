@@ -4,13 +4,14 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { Player } from './Player'
 
-const NPC_COUNT = 20 
-const MAP_SIZE = 40 
+const NPC_COUNT = 20
+const MAP_SIZE = 40
 
 const names = ["市民", "游客", "散户", "打工人", "路人", "外卖员", "中介", "极客"]
 const getRandomName = () => `${names[Math.floor(Math.random() * names.length)]} ${Math.floor(Math.random() * 999)}`
 const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
 
+// 随机皮肤
 const randomSkin = () => ({
   head: Math.random() > 0.5 ? "#ffccaa" : "#8d5524",
   body: randomColor(),
@@ -26,7 +27,7 @@ function SingleNPC({ startPos }) {
   const [isWalking, setIsWalking] = useState(false)
   
   const data = useMemo(() => ({
-    target: [startPos[0], 0, startPos[2]], 
+    target: [startPos[0], 0, startPos[2]],
     speed: 0.5 + Math.random() * 1.5,
     skin: randomSkin(),
     name: getRandomName(),
@@ -46,7 +47,7 @@ function SingleNPC({ startPos }) {
       data.waitTime += delta
       if (data.waitTime > 2 + Math.random() * 3) { 
         const angle = Math.random() * Math.PI * 2
-        const radius = 5 + Math.random() * 15 
+        const radius = 5 + Math.random() * 15
         data.target = [Math.sin(angle) * radius, 0, Math.cos(angle) * radius]
         data.waitTime = 0
         group.current.lookAt(data.target[0], 0, data.target[2])
@@ -55,8 +56,9 @@ function SingleNPC({ startPos }) {
       setIsWalking(true)
       const moveDist = data.speed * delta
       
-      // 🚨 关键修复：防止除以0导致的 NaN/Infinity 崩溃
-      if (dist > 0.001) {
+      // 🛡️【关键修复】：绝对防止除以0导致的崩溃
+      // 只有距离大于 0.01 此时才移动
+      if (dist > 0.01) {
         group.current.position.x += (dx / dist) * moveDist
         group.current.position.z += (dz / dist) * moveDist
       }
