@@ -111,9 +111,9 @@ export default function GameScene({
           {buildings && buildings.map(b => {
             const pos = [b.x, 0, b.z]
             const owner = b.owner_name || "未知富豪"
-            const level = b.level || 1 // <--- 获取等级
+            // 🔒 强制安全转换：如果是空，就设为1
+            const level = b.level ? Number(b.level) : 1 
 
-            // 必须把 level 传给所有组件
             switch(b.type) {
               case 'store':  return <ConvenienceStore key={b.id} position={pos} lang={lang} owner={owner} level={level} />
               case 'coffee': return <CoffeeShop key={b.id} position={pos} lang={lang} owner={owner} level={level} />
