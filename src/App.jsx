@@ -7,21 +7,20 @@ import ProfileEditor from './ProfileEditor'
 import Leaderboard from './Leaderboard'
 import './App.css'
 
-// 找到这一行，更新为包含 hair 和 shoes
-const DEFAULT_SKIN = { 
-  head: "#ffccaa", 
-  body: "#3498db", 
-  legs: "#2c3e50", 
-  eyes: "#000000", 
-  backpack: "#e74c3c",
-  hair: "#333333", // 默认黑发
-  shoes: "#1a1a1a" // 默认黑鞋
-}
+const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
 
+// 随机出生点 (避开中心纪念碑 6米范围)
 const getRandomSpawn = () => {
   const angle = Math.random() * Math.PI * 2
   const radius = 6 + Math.random() * 4
   return [Math.sin(angle) * radius, 0, Math.cos(angle) * radius]
+}
+
+// --- 新增：计算安全出生点 (在目标周围 3米处) ---
+const getSafeSpawnAround = (x, z) => {
+  const angle = Math.random() * Math.PI * 2
+  const distance = 3.5 // 离中心 3.5米，确保不被卡在墙里
+  return [x + Math.sin(angle) * distance, 0, z + Math.cos(angle) * distance]
 }
 
 function App() {
@@ -29,6 +28,7 @@ function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [isGuest, setIsGuest] = useState(false)
 
+  // 监听登录状态
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -46,6 +46,7 @@ function App() {
 
   if (isAuthLoading) return <div className="loading-screen">Loading World...</div>
 
+  // 未登录且非游客 -> 显示登录页
   if (!session && !isGuest) {
     return <Auth onGuestClick={() => setIsGuest(true)} />
   }
@@ -53,7 +54,9 @@ function App() {
   return <GameWorld session={session} isGuest={isGuest} />
 }
 
+// === 游戏主逻辑 ===
 function GameWorld({ session, isGuest }) {
+  // --- 身份信息 ---
   const [myId] = useState(session ? session.user.id : `guest-${Math.random().toString(36).substr(2, 5)}`)
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   
@@ -63,45 +66,55 @@ function GameWorld({ session, isGuest }) {
 
   const [lang, setLang] = useState('zh') 
 
+  // --- 游戏数值 ---
   const [cash, setCash] = useState(0)
   const [energy, setEnergy] = useState(0)
   const [income, setIncome] = useState(0)
   const [loading, setLoading] = useState(true)
   const [isWorking, setIsWorking] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
+  const [nextSleepTime, setNextSleepTime] = useState(0) 
 
-  const [myPosition, setMyPosition] = useState(getRandomSpawn) 
-  const posRef = useRef(myPosition)
+  // --- 地图与位置 ---
+  const [myPosition, setMyPosition] = useState([0, 0, 0]) // 初始0，等待加载
+  const posRef = useRef([0, 0, 0])
   const [otherPlayers, setOtherPlayers] = useState({}) 
   const [buildings, setBuildings] = useState([]) 
   const [currentGrid, setCurrentGrid] = useState({x: 0, z: 0}) 
   const [activeShop, setActiveShop] = useState(null) 
   
+  // --- 交互系统 ---
   const [myMessage, setMyMessage] = useState("") 
   const [chatInput, setChatInput] = useState("") 
   const [showChat, setShowChat] = useState(false) 
   const [floatEvents, setFloatEvents] = useState([]) 
   
+  // --- 系统配置 ---
   const lastFetchPos = useRef([9999, 9999, 9999])
   const FETCH_THRESHOLD = 20 
   const VIEW_DISTANCE = 80 
   
   const incomeRef = useRef(income)
+  const cashRef = useRef(cash)
   const channelRef = useRef(null) 
   const lastSentPosRef = useRef(null) 
 
   useEffect(() => { posRef.current = myPosition }, [])
   useEffect(() => { incomeRef.current = income }, [income])
+  useEffect(() => { cashRef.current = cash }, [cash])
 
+  // --- 辅助：触发特效 ---
   const triggerFloatText = (text, position) => {
     setFloatEvents(prev => [...prev, { text, pos: position }])
   }
 
+  // --- 1. 地图加载 (AOI) ---
   const fetchNearbyBuildings = async (x, z) => {
     const { data } = await supabase.rpc('get_nearby_buildings', { center_x: x, center_z: z, radius: VIEW_DISTANCE })
     if (data) setBuildings(data)
   }
 
+  // --- 2. 移动逻辑 ---
   const moveCharacter = (direction) => {
     const speed = 0.8 
     const [x, y, z] = posRef.current
@@ -127,6 +140,7 @@ function GameWorld({ session, isGuest }) {
     const gridZ = Math.floor(newPos[2] / 2) * 2 + 1
     setCurrentGrid({ x: gridX, z: gridZ })
 
+    // 检测店铺交互
     const nearby = buildings.find(b => {
       const dx = newPos[0] - b.x; const dz = newPos[2] - b.z
       return Math.sqrt(dx*dx + dz*dz) < 2.5
@@ -134,6 +148,7 @@ function GameWorld({ session, isGuest }) {
     if (nearby && nearby.owner_id !== myId) setActiveShop(nearby)
     else setActiveShop(null)
 
+    // AOI 加载
     const dx = newPos[0] - lastFetchPos.current[0]
     const dz = newPos[2] - lastFetchPos.current[2]
     if (Math.sqrt(dx*dx + dz*dz) > FETCH_THRESHOLD) {
@@ -168,14 +183,55 @@ function GameWorld({ session, isGuest }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [buildings, myId, showChat, chatInput])
 
+  // --- 3. 初始化 (核心修改：安全出生点) ---
   useEffect(() => {
     async function initGame() {
+      let spawnPos = getRandomSpawn()
+
       if (!isGuest) {
-        const { data } = await supabase.from('profiles').select('*').eq('id', myId).single()
-        if (data) {
-          setCash(data.cash); setEnergy(data.energy); setIncome(data.passive_income || 0)
-          if (data.nickname) setMyName(data.nickname)
-          if (data.avatar) setMySkin(data.avatar)
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', myId).single()
+        
+        if (profile) {
+          // 找第一栋房子
+          const { data: home } = await supabase
+            .from('buildings')
+            .select('x, z')
+            .eq('owner_id', myId)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .single()
+          
+          if (home) {
+            // 🚨 关键修复：不要直接出现在 (x, z)，而是偏移一点
+            spawnPos = getSafeSpawnAround(home.x, home.z)
+            console.log("🏠 欢迎回家，已停靠在建筑旁")
+          }
+
+          // 计算离线收益
+          let offlineCash = 0
+          if (profile.last_active_at && profile.passive_income > 0) {
+            const lastActive = new Date(profile.last_active_at).getTime()
+            const now = Date.now()
+            const secondsPassed = (now - lastActive) / 1000
+            const validSeconds = Math.min(secondsPassed, 24 * 3600)
+            
+            if (validSeconds > 60) {
+              offlineCash = Math.floor(validSeconds * profile.passive_income)
+              alert(`💰 欢迎回来！\n\n离线收益: $${offlineCash.toLocaleString()}`)
+            }
+          }
+
+          setCash(profile.cash + offlineCash)
+          setEnergy(profile.energy)
+          setIncome(profile.passive_income || 0)
+          if (profile.nickname) setMyName(profile.nickname)
+          if (profile.avatar) setMySkin(profile.avatar)
+
+          // 更新数据库
+          await supabase.from('profiles').update({ 
+            cash: profile.cash + offlineCash,
+            last_active_at: new Date().toISOString()
+          }).eq('id', myId)
         }
       } else {
         setCash(0); setEnergy(100); setIncome(0)
@@ -183,14 +239,29 @@ function GameWorld({ session, isGuest }) {
       }
 
       setLoading(false)
-      fetchNearbyBuildings(myPosition[0], myPosition[2])
-      lastFetchPos.current = myPosition
-      joinMultiplayerRoom(myId, myPosition)
+      // 应用出生点
+      setMyPosition(spawnPos)
+      posRef.current = spawnPos
+      
+      fetchNearbyBuildings(spawnPos[0], spawnPos[2])
+      lastFetchPos.current = spawnPos
+      
+      joinMultiplayerRoom(myId, spawnPos)
     }
     initGame()
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
   }, [isGuest, myId]) 
 
+  // 心跳更新 last_active_at
+  useEffect(() => {
+    if (isGuest) return
+    const activeTimer = setInterval(() => {
+      supabase.from('profiles').update({ last_active_at: new Date().toISOString() }).eq('id', myId)
+    }, 60000)
+    return () => clearInterval(activeTimer)
+  }, [isGuest, myId])
+
+  // --- 4. 多人连接 ---
   const joinMultiplayerRoom = (userId, position) => {
     if (channelRef.current) return
 
@@ -265,20 +336,29 @@ function GameWorld({ session, isGuest }) {
     return () => clearInterval(syncInterval)
   }, [isConnected, isWorking, mySkin, myName, myId])
 
+  // 自动赚钱 & 保存
   useEffect(() => {
     const timer = setInterval(() => {
       if (incomeRef.current > 0) setCash(prev => prev + parseFloat(incomeRef.current))
     }, 1000)
-    return () => clearInterval(timer)
-  }, [])
+    
+    const saveTimer = setInterval(async () => {
+      if (!isGuest && incomeRef.current > 0) {
+        await supabase.from('profiles').update({ 
+          cash: cashRef.current,
+          last_active_at: new Date().toISOString()
+        }).eq('id', myId)
+      }
+    }, 30000)
 
-  // --- 保存形象 (拦截游客) ---
-  const handleSaveProfile = async (newName, newSkin) => {
-    if (isGuest) {
-      alert("🔒 游客模式无法保存形象。\n请注册账号以保存您的个性装扮！")
-      return
+    return () => {
+      clearInterval(timer)
+      clearInterval(saveTimer)
     }
+  }, [isGuest, myId])
 
+  const handleSaveProfile = async (newName, newSkin) => {
+    if (isGuest) { alert("🔒 游客模式无法保存"); return }
     if (!newName || newName.trim() === "") { alert("❌ 名字不能为空"); return }
     
     const { error } = await supabase.from('profiles').update({ nickname: newName, avatar: newSkin }).eq('id', myId)
@@ -291,7 +371,7 @@ function GameWorld({ session, isGuest }) {
     alert(`✅ 形象已更新`)
   }
 
-  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式\n\n请注册账号以开始创业！"); return true } return false }
+  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式\n\n请注册账号！"); return true } return false }
   
   const work = async () => {
     if (checkGuest()) return
@@ -301,7 +381,7 @@ function GameWorld({ session, isGuest }) {
       setCash(newCash); setEnergy(newEnergy)
       await supabase.from('profiles').update({ cash: newCash, energy: newEnergy }).eq('id', myId)
       if(navigator.vibrate) navigator.vibrate(20)
-      triggerFloatText("+¥15", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
+      triggerFloatText("+$15", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
     } else { alert("没精力了！") }
   }
 
@@ -312,78 +392,62 @@ function GameWorld({ session, isGuest }) {
         const newCash = cash - cost; const newIncome = income + 5
         setCash(newCash); setIncome(newIncome)
         await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
-        triggerFloatText("-¥200", posRef.current)
+        triggerFloatText("-$200", posRef.current)
         alert("已购买流动摊位")
-      } else { alert(`钱不够，需要 ${cost}`) }
+      } else { alert(`钱不够，需要 $${cost}`) }
   }
 
   const sleep = async () => { 
-      if (checkGuest()) return; setEnergy(100) 
+      if (checkGuest()) return
+      const now = Date.now()
+      if (now < nextSleepTime) {
+        alert(`🛌 休息太频繁！请等 ${Math.ceil((nextSleepTime - now) / 1000)} 秒`)
+        return
+      }
+      setEnergy(100)
+      setNextSleepTime(now + 60000)
       await supabase.from('profiles').update({ energy: 100 }).eq('id', myId)
       triggerFloatText("⚡精力满", posRef.current)
   }
   
-  // 优化版：回城逻辑
+  // --- 修复：回城也使用安全偏移 ---
   const goHome = async () => {
-    // 1. 先尝试找自己的家（第一栋建筑）
-    const { data } = await supabase
-      .from('buildings')
-      .select('x, z')
-      .eq('owner_id', myId)
-      .order('created_at', { ascending: true }) // 找最早建的
-      .limit(1)
-      .single()
+      const { data } = await supabase.from('buildings').select('x, z').eq('owner_id', myId).order('created_at', { ascending: true }).limit(1).single()
+      
+      let homePos = getRandomSpawn()
+      if (data) {
+        // 🚨 关键：使用 getSafeSpawnAround 计算家门口的位置
+        homePos = getSafeSpawnAround(data.x, data.z)
+        alert("🏠 欢迎回家")
+      } else {
+        alert("🏠 暂无房产，传送至安全区")
+      }
 
-    let targetPos = []
-
-    if (data) {
-      // 找到了！回家！
-      targetPos = [data.x, 0, data.z]
-      alert("🏠 欢迎回家！")
-    } else {
-      // 没房？去随机出生点
-      targetPos = getRandomSpawn()
-      alert("🏠 您还没有房产，已传送至安全区。")
-    }
-
-    // 执行传送
-    setMyPosition(targetPos)
-    posRef.current = targetPos
-    fetchNearbyBuildings(targetPos[0], targetPos[2])
-    lastFetchPos.current = targetPos
-    setCurrentGrid({x: Math.round(targetPos[0]), z: Math.round(targetPos[2])})
-    setActiveShop(null) 
+      setMyPosition(homePos); posRef.current = homePos
+      fetchNearbyBuildings(homePos[0], homePos[2]); lastFetchPos.current = homePos
+      setCurrentGrid({x: Math.round(homePos[0]), z: Math.round(homePos[2])}); setActiveShop(null) 
   }
 
-  // 优化版：建造逻辑 (乐观更新)
   const buildBuilding = async (type, cost, incomeBoost, name) => {
     if (checkGuest()) return
-    if (cash < cost) { alert(`❌ 资金不足\n需要: ¥${cost}`); return }
+    if (cash < cost) { alert(`❌ 资金不足\n需要: $${cost}`); return }
     if (Math.abs(currentGrid.x) < 3 && Math.abs(currentGrid.z) < 3) { alert("❌ 保护区"); return }
     const isOccupied = buildings.some(b => Math.abs(b.x - currentGrid.x) < 1.5 && Math.abs(b.z - currentGrid.z) < 1.5)
     if (isOccupied) { alert("❌ 太挤了"); return }
 
-    // 1. 先扣钱 (本地)
     const newCash = cash - cost; const newIncome = income + incomeBoost
     setCash(newCash); setIncome(newIncome)
     
-    // 2. ⚡ 乐观更新：立刻把楼加到数组里，不用等服务器返回
-    const tempBuilding = {
-      id: Math.random(), // 临时ID
-      owner_id: myId,
-      owner_name: myName, // 记得把名字带上
-      type: type,
-      x: currentGrid.x,
-      z: currentGrid.z
-    }
-    setBuildings(prev => [...prev, tempBuilding])
-    triggerFloatText(`-¥${cost}`, posRef.current)
+    const tempB = { id: Math.random(), owner_id: myId, owner_name: myName, type, x: currentGrid.x, z: currentGrid.z }
+    setBuildings(prev => [...prev, tempB])
+    triggerFloatText(`-$${cost}`, posRef.current)
 
-    // 3. 后台慢慢存数据库
+    // 弹开
+    const escapePos = [posRef.current[0] + 2, 0, posRef.current[2]]
+    setMyPosition(escapePos); posRef.current = escapePos
+
     await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
     await supabase.from('buildings').insert({ owner_id: myId, type: type, x: currentGrid.x, z: currentGrid.z })
-    
-    // alert(`✅ ${name} 建造成功！`) // 既然已经立刻显示了，弹窗可以去掉了，体验更流畅
   }
 
   const handlePurchase = async () => {
@@ -394,7 +458,7 @@ function GameWorld({ session, isGuest }) {
     const { data, error } = await supabase.rpc('buy_item', { buyer_id: myId, building_id: activeShop.id, price: PRICE })
     if (data && data.status === 'success') {
       setCash(prev => prev - PRICE); setEnergy(prev => Math.min(prev + 20, 100))
-      triggerFloatText(`-¥${PRICE}`, posRef.current)
+      triggerFloatText(`-$${PRICE}`, posRef.current)
       triggerFloatText("⚡+20", [posRef.current[0], posRef.current[1]+0.5, posRef.current[2]])
     } else { alert(`❌ 交易失败`) }
   }
@@ -462,7 +526,7 @@ function GameWorld({ session, isGuest }) {
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
                  <div style={{fontSize:'12px', color:'#888', marginBottom:'5px'}}>🏪 商店</div>
                  <div style={{fontSize:'18px', fontWeight:'bold', marginBottom:'10px'}}>购买补给套餐</div>
-                 <button onClick={handlePurchase} style={{background: '#2ecc71', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold'}}>支付 ¥50</button>
+                 <button onClick={handlePurchase} style={{background: '#2ecc71', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold'}}>支付 $50</button>
               </div>
            </div>
         )}
@@ -476,23 +540,26 @@ function GameWorld({ session, isGuest }) {
 
         <div className="bottom-controls">
           <div className="stats-card">
-             <div>¥ {Math.floor(cash)}</div>
+             <div>$ {Math.floor(cash)}</div>
              <div>⚡ {energy}</div>
              <div style={{color:'#ffa502'}}>+{income}/s</div>
           </div>
           <div className="actions-scroll">
             <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
             <ActionBtn title="🌭 流动摊 (200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
-            
-            {/* 优化后的按钮文案 */}
             <ActionBtn title="🏪 便利店 (1k)" onClick={() => buildBuilding('store', 1000, 20, '便利店')} color="#9b59b6" />
             <ActionBtn title="☕ 咖啡馆 (5k)" onClick={() => buildBuilding('coffee', 5000, 80, '咖啡馆')} color="#00704a" />
             <ActionBtn title="⛽ 加油站 (2w)" onClick={() => buildBuilding('gas', 20000, 300, '加油站')} color="#e74c3c" />
             <ActionBtn title="🏢 科技园 (10w)" onClick={() => buildBuilding('office', 100000, 1200, '科技园')} color="#3498db" />
             <ActionBtn title="🌆 摩天大楼 (100w)" onClick={() => buildBuilding('tower', 1000000, 10000, '摩天大楼')} color="#2c3e50" />
             <ActionBtn title="🚀 火箭基地 (1亿)" onClick={() => buildBuilding('rocket', 100000000, 99999, '发射基地')} color="#c0392b" />
-
-            <ActionBtn title="💤 睡觉" onClick={sleep} color="#2ed573" />
+            
+            <ActionBtn 
+              title={Date.now() < nextSleepTime ? `💤 冷却` : "💤 睡觉"} 
+              onClick={sleep} 
+              color="#2ed573" 
+              disabled={Date.now() < nextSleepTime}
+            />
           </div>
         </div>
       </div>
