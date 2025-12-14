@@ -11,7 +11,6 @@ const names = ["市民", "游客", "散户", "打工人", "路人", "外卖员",
 const getRandomName = () => `${names[Math.floor(Math.random() * names.length)]} ${Math.floor(Math.random() * 999)}`
 const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
 
-// 随机皮肤
 const randomSkin = () => ({
   head: Math.random() > 0.5 ? "#ffccaa" : "#8d5524",
   body: randomColor(),
@@ -42,6 +41,12 @@ function SingleNPC({ startPos }) {
     const dz = data.target[2] - current.z
     const dist = Math.sqrt(dx * dx + dz * dz)
 
+    // 🛡️ 防崩溃检查 1: 如果计算出 NaN，重置位置
+    if (isNaN(dist) || isNaN(dx) || isNaN(dz)) {
+      group.current.position.set(startPos[0], 0, startPos[2])
+      return
+    }
+
     if (dist < 0.5) {
       setIsWalking(false)
       data.waitTime += delta
@@ -56,8 +61,7 @@ function SingleNPC({ startPos }) {
       setIsWalking(true)
       const moveDist = data.speed * delta
       
-      // 🛡️【关键修复】：绝对防止除以0导致的崩溃
-      // 只有距离大于 0.01 此时才移动
+      // 🛡️ 防崩溃检查 2: 只有距离足够才移动，防止除以0
       if (dist > 0.01) {
         group.current.position.x += (dx / dist) * moveDist
         group.current.position.z += (dz / dist) * moveDist

@@ -1,13 +1,7 @@
 /* src/GameScene.jsx */
 import React, { Suspense, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { 
-  OrbitControls, 
-  PerspectiveCamera, 
-  Environment, 
-  ContactShadows, 
-  Html 
-} from '@react-three/drei'
+import { OrbitControls, PerspectiveCamera, Environment, ContactShadows, Html } from '@react-three/drei'
 
 import { Player } from './models/Player'
 import { Shop } from './models/Shop'
@@ -28,12 +22,7 @@ function EnvironmentSet() {
     <>
       <Environment preset="city" />
       <ambientLight intensity={0.8} />
-      <directionalLight 
-        position={[10, 20, 10]} 
-        intensity={1.5} 
-        castShadow 
-        shadow-mapSize={[1024, 1024]} 
-      />
+      <directionalLight position={[10, 20, 10]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} />
       <fog attach="fog" args={['#dff9fb', 30, 70]} />
     </>
   )
@@ -53,11 +42,7 @@ function Ground() {
 }
 
 function OtherPlayer({ position, isWorking, color, name, message }) {
-  // 🛡️【关键修复】：如果坐标不存在或无效，直接不渲染，防止白屏
-  if (!position || position.length < 3 || isNaN(position[0]) || isNaN(position[2])) {
-    return null
-  }
-
+  if (!position || position.length < 3 || isNaN(position[0]) || isNaN(position[2])) return null
   return (
     <group position={position}>
       <Player isWorking={isWorking} skin={color} />
@@ -76,28 +61,35 @@ export default function GameScene({
   otherPlayers, buildings, currentGrid, floatEvents, lang = 'zh'
 }) {
   
-  // 生成森林
   const trees = useMemo(() => {
     const temp = []
     for(let i=0; i<50; i++) {
       const angle = Math.random() * Math.PI * 2
       const radius = 15 + Math.random() * 40 
-      temp.push({
-        x: Math.sin(angle) * radius,
-        z: Math.cos(angle) * radius,
-        type: Math.random() > 0.5 ? 'pine' : 'round'
-      })
+      temp.push({ x: Math.sin(angle) * radius, z: Math.cos(angle) * radius, type: Math.random() > 0.5 ? 'pine' : 'round' })
     }
     return temp
   }, [])
 
-  // 🛡️【关键修复】：确保我的位置也是安全的
   const safeMyPos = (myPosition && !isNaN(myPosition[0])) ? myPosition : [0,0,0]
+
+  // 🛡️【关键修复】：数据去重与清洗
+  // 1. 过滤掉坐标无效的建筑
+  // 2. 确保 ID 唯一 (Set)
+  const validBuildings = useMemo(() => {
+    if (!buildings) return []
+    const seen = new Set()
+    return buildings.filter(b => {
+      if (b.x === null || b.z === null || isNaN(b.x) || isNaN(b.z)) return false
+      if (seen.has(b.id)) return false // 如果 ID 重复，丢弃
+      seen.add(b.id)
+      return true
+    })
+  }, [buildings])
 
   return (
     <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: 'linear-gradient(to bottom, #dff9fb, #ffffff)' }}>
       <Canvas shadows="basic" dpr={[1, 2]}>
-        
         <PerspectiveCamera makeDefault position={[0, 12, 16]} fov={45} />
         <OrbitControls enableZoom={true} minDistance={5} maxDistance={40} target={safeMyPos} />
 
@@ -107,15 +99,11 @@ export default function GameScene({
           <FloatingTextManager events={floatEvents} />
           
           <NPCSystem />
-          
           {currentGrid && <SelectionBox x={currentGrid.x} z={currentGrid.z} />}
           <Monument />
 
-          {/* === 渲染建筑 (安全版) === */}
-          {buildings && buildings.map(b => {
-            // 🛡️【关键修复】：过滤脏数据，坐标无效的建筑直接跳过
-            if (b.x === null || b.z === null || isNaN(b.x) || isNaN(b.z)) return null;
-
+          {/* 渲染清洗后的建筑数据 */}
+          {validBuildings.map(b => {
             const pos = [b.x, 0, b.z]
             const owner = b.owner_name || "未知富豪"
             const level = b.level ? Number(b.level) : 1
@@ -141,16 +129,13 @@ export default function GameScene({
              {hasShop && <group position={[1.5, 0, 0]}><Shop /><Html position={[0, 3, 0]} center distanceFactor={10}><div style={{color:'#f39c12', fontSize:'10px', fontWeight:'bold', whiteSpace: 'nowrap'}}>MY SHOP</div></Html></group>}
           </group>
 
-          {/* 渲染其他玩家 (安全版) */}
           {otherPlayers && Object.keys(otherPlayers).map(key => {
             const p = otherPlayers[key]
+            if (!p.position) return null
             return <OtherPlayer key={key} position={p.position} color={p.skin || p.color} isWorking={p.isWorking} name={p.name} message={p.message} />
           })}
           
-          {trees.map((t, i) => (
-            <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
-          ))}
-
+          {trees.map((t, i) => <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />)}
         </Suspense>
       </Canvas>
     </div>
