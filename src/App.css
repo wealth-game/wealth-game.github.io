@@ -10,43 +10,27 @@ body, html {
   padding: 0;
   width: 100%;
   height: 100%;
-  overflow: hidden; /* 禁止滚动 */
-  user-select: none; /* 禁止选中文本 */
+  overflow: hidden;
+  user-select: none;
   -webkit-user-select: none;
-  touch-action: none; /* 禁止浏览器默认的缩放手势 */
+  touch-action: none;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #f1f2f6;
 }
 
-.app-container {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-}
+.app-container { position: relative; width: 100vw; height: 100vh; }
+.scene-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
 
-.scene-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
-}
-
-/* UI 覆盖层 */
 .ui-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none; /* 让触摸穿透到场景 */
+  top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end; /* 内容靠下 */
+  justify-content: flex-end; /* 底部对齐 */
 }
 
-/* 顶部信息 */
+/* --- 顶部区域 --- */
 .top-info {
   position: absolute;
   top: 10px;
@@ -55,6 +39,7 @@ body, html {
   display: flex;
   justify-content: space-between;
   pointer-events: auto;
+  z-index: 20;
 }
 
 .gps-panel {
@@ -75,23 +60,21 @@ body, html {
   font-weight: bold;
   box-shadow: 0 2px 5px rgba(0,0,0,0.2);
   font-size: 12px;
+  cursor: pointer;
 }
 
-/* 底部控制区 */
-.bottom-controls {
-  padding: 20px;
-  padding-bottom: 30px; /* 适配 iPhone 底部横条 */
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  pointer-events: none;
-}
+/* --- 📱 手机端布局核心修正 --- */
 
-/* 数据卡片 */
+/* 1. 金钱面板：手机端飞到左上角，避开摇杆 */
 .stats-card {
+  position: absolute;
+  top: 60px; /* 在 GPS 下面 */
+  left: 10px;
   display: flex;
-  justify-content: space-between;
-  padding: 12px 20px;
+  flex-direction: column; /* 手机上竖排，省空间 */
+  align-items: flex-start;
+  gap: 5px;
+  padding: 10px 15px;
   background: var(--glass-bg);
   backdrop-filter: blur(10px);
   border-radius: 12px;
@@ -100,16 +83,34 @@ body, html {
   pointer-events: auto;
   font-weight: bold;
   color: #2f3542;
+  font-size: 12px;
+  min-width: 100px;
+  z-index: 15;
 }
 
-/* 按钮横向滚动条 */
+/* 2. 底部控制区：只放按钮滚动条 */
+.bottom-controls {
+  padding: 20px;
+  padding-bottom: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  pointer-events: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 3. 按钮滚动条 */
 .actions-scroll {
   display: flex;
   gap: 10px;
   overflow-x: auto;
   pointer-events: auto;
   padding-bottom: 5px;
+  padding-left: 5px; /* 防止第一个按钮贴边 */
+  scrollbar-width: none; 
 }
+.actions-scroll::-webkit-scrollbar { display: none; }
 
 .action-btn {
   white-space: nowrap;
@@ -120,17 +121,19 @@ body, html {
   border: none;
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
   transition: transform 0.1s;
+  cursor: pointer;
 }
 .action-btn:active { transform: scale(0.95); }
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* --- 虚拟摇杆 (D-Pad) --- */
+/* 4. 虚拟摇杆：位置微调 */
 .d-pad {
   position: absolute;
-  bottom: 120px; /* 在按钮上方 */
+  bottom: 110px; /* 放在按钮上方 */
   left: 20px;
   width: 120px;
   height: 120px;
-  pointer-events: auto; /* 允许点击 */
+  pointer-events: auto;
   z-index: 20;
 }
 
@@ -138,8 +141,8 @@ body, html {
   position: absolute;
   width: 40px;
   height: 40px;
-  background: rgba(255, 255, 255, 0.4);
-  border: 1px solid rgba(255,255,255,0.6);
+  background: rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255,255,255,0.5);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -148,6 +151,8 @@ body, html {
   color: #333;
   backdrop-filter: blur(4px);
   -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  user-select: none;
 }
 .pad-btn:active { background: rgba(255,255,255,0.8); }
 
@@ -158,17 +163,34 @@ body, html {
 
 /* 加载界面 */
 .loading-screen {
-  height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #2f3542;
-  color: white;
+  height: 100vh; display: flex; justify-content: center; alignItems: center;
+  background: #2f3542; color: white; font-size: 18px; letter-spacing: 2px;
 }
-.spinner {
-  width: 30px; height: 30px; border: 3px solid #fff; 
-  border-top-color: transparent; border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 10px;
+
+/* --- 🖥️ 电脑端适配 (Responsive) --- */
+@media (min-width: 768px) {
+  /* 隐藏摇杆 */
+  .d-pad { display: none; }
+
+  /* 底部栏居中 */
+  .bottom-controls { align-items: center; padding-bottom: 20px; }
+  
+  /* 电脑上，金钱面板放回底部中央，并改成横排 */
+  .stats-card {
+    position: static; /* 取消绝对定位，回到文档流 */
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    width: 400px;
+    font-size: 14px;
+  }
+
+  .actions-scroll {
+    justify-content: center;
+    flex-wrap: wrap; 
+    overflow: visible;
+    padding-left: 0;
+  }
 }
-@keyframes spin { to {transform: rotate(360deg);} }
