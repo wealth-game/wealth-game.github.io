@@ -3,9 +3,10 @@ import React, { useState } from 'react'
 
 export default function ProfileEditor({ initialName, initialSkin, onSave, onClose }) {
   const [name, setName] = useState(initialName)
-  // 确保 initialSkin 有默认值，防止报错
+  // 确保所有字段都有默认值
   const [skin, setSkin] = useState({
-    head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c",
+    head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", 
+    hair: "#2c3e50", shoes: "#333333",
     ...initialSkin 
   })
 
@@ -17,18 +18,15 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
     onSave(name, skin)
   }
 
-  // 颜色选择器组件 (复用代码)
   const ColorInput = ({ label, part }) => (
     <div style={styles.formGroup}>
       <label>{label}</label>
-      <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-        <input 
-          type="color" 
-          value={skin[part]} 
-          onChange={e => handleColorChange(part, e.target.value)} 
-          style={{cursor:'pointer', width:'40px', height:'30px', border:'none', padding:0}}
-        />
-      </div>
+      <input 
+        type="color" 
+        value={skin[part]} 
+        onChange={e => handleColorChange(part, e.target.value)} 
+        style={{cursor:'pointer', width:'40px', height:'30px', border:'none', padding:0}}
+      />
     </div>
   )
 
@@ -39,34 +37,31 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
         
         <div style={styles.formGroup}>
           <label>你的名字</label>
-          <input 
-            style={styles.input} 
-            value={name} 
-            onChange={e => setName(e.target.value)} 
-            maxLength={10}
-          />
+          <input style={styles.input} value={name} onChange={e => setName(e.target.value)} maxLength={10} />
         </div>
 
         <div style={styles.preview}>
-           {/* 简单的色块预览 */}
-           <div style={{...styles.colorBlock, background: skin.head}}>头</div>
-           <div style={{...styles.colorBlock, background: skin.eyes, color:'white'}}>眼</div>
-           <div style={{...styles.colorBlock, background: skin.body}}>衣</div>
-           <div style={{...styles.colorBlock, background: skin.backpack, color:'white'}}>包</div>
-           <div style={{...styles.colorBlock, background: skin.legs}}>裤</div>
+           {/* 简单的色块预览，增加头发和鞋子 */}
+           <div style={{...styles.colorBlock, background: skin.hair, color:'white'}}>发</div>
+           <div style={{...styles.colorBlock, background: skin.head}}>脸</div>
+           <div style={{...styles.colorBlock, background: skin.body, color:'white'}}>衣</div>
+           <div style={{...styles.colorBlock, background: skin.legs, color:'white'}}>裤</div>
+           <div style={{...styles.colorBlock, background: skin.shoes, color:'white'}}>鞋</div>
         </div>
 
         <div style={styles.scrollArea}>
-          <ColorInput label="肤色 (Head)" part="head" />
-          <ColorInput label="上衣 (Body)" part="body" />
-          <ColorInput label="裤子 (Legs)" part="legs" />
+          <ColorInput label="头发 (Hair)" part="hair" />
+          <ColorInput label="肤色 (Skin)" part="head" />
           <ColorInput label="眼睛 (Eyes)" part="eyes" />
-          <ColorInput label="书包 (Pack)" part="backpack" />
+          <ColorInput label="上衣 (Top)" part="body" />
+          <ColorInput label="裤子 (Pants)" part="legs" />
+          <ColorInput label="鞋子 (Shoes)" part="shoes" />
+          <ColorInput label="背包 (Pack)" part="backpack" />
         </div>
 
         <div style={styles.btnGroup}>
           <button onClick={onClose} style={styles.cancelBtn}>取消</button>
-          <button onClick={handleSave} style={styles.saveBtn}>保存形象</button>
+          <button onClick={handleSave} style={styles.saveBtn}>保存</button>
         </div>
       </div>
     </div>
@@ -86,7 +81,7 @@ const styles = {
   input: { padding: '8px', borderRadius: '5px', border: '1px solid #ccc', width: '150px', fontSize:'16px' },
   preview: { display: 'flex', justifyContent: 'center', gap: '5px', marginBottom: '15px' },
   colorBlock: { width: '30px', height: '30px', borderRadius: '6px', color: 'rgba(0,0,0,0.5)', fontSize: '10px', display: 'flex', justifyContent: 'center', alignItems: 'center', border:'1px solid #ddd' },
-  scrollArea: { overflowY:'auto', flex:1, paddingRight:'5px' },
+  scrollArea: { overflowY:'auto', flex:1, paddingRight:'5px', maxHeight:'300px' },
   btnGroup: { display: 'flex', gap: '10px', marginTop: '20px' },
   saveBtn: { flex: 1, padding: '12px', background: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
   cancelBtn: { flex: 1, padding: '12px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }

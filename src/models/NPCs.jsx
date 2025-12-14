@@ -11,13 +11,15 @@ const names = ["市民", "游客", "散户", "打工人", "路人", "外卖员",
 const getRandomName = () => `${names[Math.floor(Math.random() * names.length)]} ${Math.floor(Math.random() * 999)}`
 const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
 
-// 升级：随机生成 5 部分皮肤
+// 升级随机皮肤生成器
 const randomSkin = () => ({
-  head: Math.random() > 0.5 ? "#ffccaa" : "#8d5524", // 随机两种肤色
+  head: Math.random() > 0.5 ? "#ffccaa" : "#8d5524",
   body: randomColor(),
   legs: randomColor(),
   eyes: "#000000",
-  backpack: randomColor()
+  backpack: randomColor(),
+  hair: Math.random() > 0.3 ? "#333333" : randomColor(), // 大部分黑发，偶尔染发
+  shoes: Math.random() > 0.5 ? "#333333" : "#ffffff" // 黑鞋或白鞋
 })
 
 function SingleNPC({ startPos }) {

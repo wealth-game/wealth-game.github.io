@@ -7,7 +7,16 @@ import ProfileEditor from './ProfileEditor'
 import Leaderboard from './Leaderboard'
 import './App.css'
 
-const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c" }
+// 找到这一行，更新为包含 hair 和 shoes
+const DEFAULT_SKIN = { 
+  head: "#ffccaa", 
+  body: "#3498db", 
+  legs: "#2c3e50", 
+  eyes: "#000000", 
+  backpack: "#e74c3c",
+  hair: "#333333", // 默认黑发
+  shoes: "#1a1a1a" // 默认黑鞋
+}
 
 const getRandomSpawn = () => {
   const angle = Math.random() * Math.PI * 2
@@ -314,12 +323,39 @@ function GameWorld({ session, isGuest }) {
       triggerFloatText("⚡精力满", posRef.current)
   }
   
-  const goHome = () => {
-      const homePos = getRandomSpawn(); setMyPosition(homePos); posRef.current = homePos
-      fetchNearbyBuildings(homePos[0], homePos[2]); lastFetchPos.current = homePos
-      setCurrentGrid({x: 0, z: 0}); setActiveShop(null) 
+  // 优化版：回城逻辑
+  const goHome = async () => {
+    // 1. 先尝试找自己的家（第一栋建筑）
+    const { data } = await supabase
+      .from('buildings')
+      .select('x, z')
+      .eq('owner_id', myId)
+      .order('created_at', { ascending: true }) // 找最早建的
+      .limit(1)
+      .single()
+
+    let targetPos = []
+
+    if (data) {
+      // 找到了！回家！
+      targetPos = [data.x, 0, data.z]
+      alert("🏠 欢迎回家！")
+    } else {
+      // 没房？去随机出生点
+      targetPos = getRandomSpawn()
+      alert("🏠 您还没有房产，已传送至安全区。")
+    }
+
+    // 执行传送
+    setMyPosition(targetPos)
+    posRef.current = targetPos
+    fetchNearbyBuildings(targetPos[0], targetPos[2])
+    lastFetchPos.current = targetPos
+    setCurrentGrid({x: Math.round(targetPos[0]), z: Math.round(targetPos[2])})
+    setActiveShop(null) 
   }
 
+  // 优化版：建造逻辑 (乐观更新)
   const buildBuilding = async (type, cost, incomeBoost, name) => {
     if (checkGuest()) return
     if (cash < cost) { alert(`❌ 资金不足\n需要: ¥${cost}`); return }
@@ -327,13 +363,27 @@ function GameWorld({ session, isGuest }) {
     const isOccupied = buildings.some(b => Math.abs(b.x - currentGrid.x) < 1.5 && Math.abs(b.z - currentGrid.z) < 1.5)
     if (isOccupied) { alert("❌ 太挤了"); return }
 
+    // 1. 先扣钱 (本地)
     const newCash = cash - cost; const newIncome = income + incomeBoost
     setCash(newCash); setIncome(newIncome)
+    
+    // 2. ⚡ 乐观更新：立刻把楼加到数组里，不用等服务器返回
+    const tempBuilding = {
+      id: Math.random(), // 临时ID
+      owner_id: myId,
+      owner_name: myName, // 记得把名字带上
+      type: type,
+      x: currentGrid.x,
+      z: currentGrid.z
+    }
+    setBuildings(prev => [...prev, tempBuilding])
+    triggerFloatText(`-¥${cost}`, posRef.current)
+
+    // 3. 后台慢慢存数据库
     await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
     await supabase.from('buildings').insert({ owner_id: myId, type: type, x: currentGrid.x, z: currentGrid.z })
     
-    triggerFloatText(`-¥${cost}`, posRef.current)
-    alert(`✅ ${name} 建造成功！\n收益 +${incomeBoost}/s`)
+    // alert(`✅ ${name} 建造成功！`) // 既然已经立刻显示了，弹窗可以去掉了，体验更流畅
   }
 
   const handlePurchase = async () => {

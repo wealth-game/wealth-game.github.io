@@ -12,6 +12,8 @@ export default function Leaderboard({ myId }) {
       const { data } = await supabase
         .from('profiles')
         .select('nickname, cash, id')
+        .neq('nickname', null) // <--- 关键修复：排除没有名字的“幽灵”
+        .not('nickname', 'is', null) // 双重保险
         .order('cash', { ascending: false })
         .limit(10)
       
