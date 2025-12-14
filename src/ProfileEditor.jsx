@@ -23,7 +23,7 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
       <input 
         type="color" 
         value={skin[part]} 
-        // 关键修复：阻止事件冒泡，防止误触关闭
+        // 这里的 stopPropagation 是为了双重保险
         onClick={(e) => e.stopPropagation()}
         onChange={e => handleColorChange(part, e.target.value)} 
         style={{cursor:'pointer', width:'40px', height:'30px', border:'none', padding:0}}
@@ -32,10 +32,10 @@ export default function ProfileEditor({ initialName, initialSkin, onSave, onClos
   )
 
   return (
-    // 点击遮罩层关闭
-    <div style={styles.overlay} onClick={onClose}>
-      {/* 关键修复：点击卡片内部不关闭 */}
-      <div style={styles.card} onClick={(e) => e.stopPropagation()}>
+    // 关键修改：移除了外层的 onClick={onClose}
+    // 现在只有点击下面的【取消】按钮才能关掉弹窗，防止选颜色时误触关闭
+    <div style={styles.overlay}>
+      <div style={styles.card}>
         <h2 style={{marginTop:0}}>🎨 形象定制</h2>
         
         <div style={styles.formGroup}>
