@@ -4,10 +4,17 @@ import React, { useState } from 'react'
 export default function PlayerCard({ targetPlayer, onClose, onTransfer }) {
   const [amount, setAmount] = useState('')
 
+  // 🛡️ 安全检查：如果数据没传过来，不要渲染
+  if (!targetPlayer) return null;
+
   const handleSend = () => {
     if (!amount || amount <= 0) return alert("请输入金额")
-    onTransfer(targetPlayer.userId, parseFloat(amount)) // 注意：这里用 userId
+    if (!targetPlayer.userId) return alert("❌ 无法获取对方ID") // 防崩
+    onTransfer(targetPlayer.userId, parseFloat(amount)) 
   }
+
+  // 安全获取 ID
+  const displayId = targetPlayer.userId ? targetPlayer.userId.substr(0,8) : "???";
 
   return (
     <div style={styles.overlay} onClick={onClose}>
@@ -16,7 +23,7 @@ export default function PlayerCard({ targetPlayer, onClose, onTransfer }) {
           <div style={styles.avatar}>👤</div>
           <div>
             <h3 style={{margin:0}}>{targetPlayer.name || "神秘人"}</h3>
-            <div style={{fontSize:'10px', color:'#999'}}>ID: {targetPlayer.userId?.substr(0,8)}...</div>
+            <div style={{fontSize:'10px', color:'#999'}}>ID: {displayId}...</div>
           </div>
         </div>
 

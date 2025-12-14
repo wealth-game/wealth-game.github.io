@@ -7,7 +7,7 @@ import ProfileEditor from './ProfileEditor'
 import Leaderboard from './Leaderboard'
 import BankModal from './BankModal'
 import StockMarket from './StockMarket'
-import PlayerCard from './PlayerCard' // <--- 新增
+import PlayerCard from './PlayerCard'
 import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
@@ -58,7 +58,6 @@ function GameWorld({ session, isGuest }) {
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
-  
   const [showProfile, setShowProfile] = useState(false)
   const [showBank, setShowBank] = useState(false)
   const [showStock, setShowStock] = useState(false)
@@ -148,7 +147,6 @@ function GameWorld({ session, isGuest }) {
       const dx = newPos[0] - b.x; const dz = newPos[2] - b.z
       return Math.sqrt(dx*dx + dz*dz) < 2.5
     })
-    
     if (nearby) setActiveShop(nearby)
     else setActiveShop(null)
 
@@ -160,31 +158,35 @@ function GameWorld({ session, isGuest }) {
     }
   }
 
-  // --- 点击玩家事件 ---
-  // 这个函数会传给 GameScene，当点击其他玩家模型时触发
-  const handlePlayerClick = (playerData) => {
-    if (playerData.userId === myId) return // 点自己没反应
-    console.log("选中玩家:", playerData)
-    setSelectedPlayer(playerData) // 弹出转账卡片
+  const checkCollision = (targetPos) => {
+    const [tx, ty, tz] = targetPos
+    if (Math.abs(tx) < 3.5 && Math.abs(tz) < 3.5) return true
+    for (let b of buildings) {
+      const dx = tx - b.x; const dz = tz - b.z
+      if (Math.sqrt(dx*dx + dz*dz) < 1.5) return true
+    }
+    return false
   }
 
-  // --- P2P 转账逻辑 ---
+  // --- 处理点击其他玩家 ---
+  const handlePlayerClick = (playerData) => {
+    if (playerData.userId === myId) return
+    // console.log("选中玩家:", playerData)
+    setSelectedPlayer(playerData)
+  }
+
   const handleTransfer = async (targetUserId, amount) => {
     if (isGuest) { alert("🔒 游客无法转账"); return }
     if (cash < amount) { alert("❌ 余额不足"); return }
 
     const { data, error } = await supabase.rpc('transfer_cash', {
-      sender_id: myId,
-      receiver_id: targetUserId,
-      amount: amount
+      sender_id: myId, receiver_id: targetUserId, amount: amount
     })
 
     if (data && data.status === 'success') {
       setCash(prev => prev - amount)
       triggerFloatText(`-$${amount}`, posRef.current)
-      setSelectedPlayer(null) // 关闭窗口
-      
-      // 全服广播土豪行为
+      setSelectedPlayer(null) 
       if (channelRef.current) {
         channelRef.current.send({
           type: 'broadcast', event: 'chat',
@@ -195,16 +197,6 @@ function GameWorld({ session, isGuest }) {
     } else {
       alert(`❌ 失败: ${data?.msg || error?.message}`)
     }
-  }
-
-  const checkCollision = (targetPos) => {
-    const [tx, ty, tz] = targetPos
-    if (Math.abs(tx) < 3.5 && Math.abs(tz) < 3.5) return true
-    for (let b of buildings) {
-      const dx = tx - b.x; const dz = tz - b.z
-      if (Math.sqrt(dx*dx + dz*dz) < 1.5) return true
-    }
-    return false
   }
 
   useEffect(() => {
@@ -433,7 +425,9 @@ function GameWorld({ session, isGuest }) {
       if (data) {
         homePos = getSafeSpawnAround(data.x, data.z)
         alert("🏠 欢迎回家")
-      } else { alert("🏠 暂无房产，传送至安全区") }
+      } else {
+        alert("🏠 暂无房产，传送至安全区")
+      }
       setMyPosition(homePos); posRef.current = homePos
       fetchNearbyBuildings(homePos[0], homePos[2]); lastFetchPos.current = homePos
       setCurrentGrid({x: Math.round(homePos[0]), z: Math.round(homePos[2])}); setActiveShop(null) 
@@ -521,14 +515,23 @@ function GameWorld({ session, isGuest }) {
         />
       )}
 
+      {/* 交易弹窗 (Transfer) */}
+      {selectedPlayer && (
+        <PlayerCard 
+          targetPlayer={selectedPlayer} 
+          onClose={() => setSelectedPlayer(null)} 
+          onTransfer={handleTransfer}
+        />
+      )}
+
       <div className="scene-container">
         <GameScene 
           isWorking={isWorking || isMoving} 
           hasShop={income > 0} 
           myPosition={myPosition} myColor={mySkin} myMessage={myMessage}
-          // ⚠️ 关键：传递 handlePlayerClick
           otherPlayers={otherPlayers} buildings={buildings} currentGrid={currentGrid}
-          floatEvents={floatEvents} lang={lang} onPlayerClick={handlePlayerClick}
+          floatEvents={floatEvents} lang={lang} 
+          onPlayerClick={handlePlayerClick} // ✅ 关键修复：传入点击事件
         />
       </div>
 
@@ -551,7 +554,6 @@ function GameWorld({ session, isGuest }) {
           Online: {Object.keys(otherPlayers).length + 1 + 20}
         </div>
 
-        {/* 聊天输入框 */}
         {showChat && (
           <div style={{position:'absolute', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'auto', zIndex:50}}>
              <div style={{background:'white', padding:'20px', borderRadius:'15px', width:'80%', maxWidth:'400px'}}>
@@ -572,16 +574,7 @@ function GameWorld({ session, isGuest }) {
           <button onClick={() => setShowChat(true)} style={{position:'absolute', right:'20px', bottom:'180px', width:'50px', height:'50px', borderRadius:'50%', background:'white', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.2)', fontSize:'24px', cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'}}>💬</button>
         )}
 
-        {/* 交易弹窗 (Transfer) */}
-        {selectedPlayer && (
-          <PlayerCard 
-            targetPlayer={selectedPlayer} 
-            onClose={() => setSelectedPlayer(null)} 
-            onTransfer={handleTransfer}
-          />
-        )}
-
-        {/* 店铺交互弹窗 */}
+        {/* 交互弹窗 */}
         {activeShop && (
            <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'}}>
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
