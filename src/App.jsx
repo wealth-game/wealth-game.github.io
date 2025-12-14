@@ -6,7 +6,7 @@ import Auth from './Auth'
 import ProfileEditor from './ProfileEditor'
 import Leaderboard from './Leaderboard'
 import BankModal from './BankModal'
-import StockMarket from './StockMarket' // <--- 新增
+import StockMarket from './StockMarket'
 import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
@@ -53,17 +53,20 @@ function App() {
 }
 
 function GameWorld({ session, isGuest }) {
+  // --- 身份 ---
   const [myId] = useState(session ? session.user.id : `guest-${Math.random().toString(36).substr(2, 5)}`)
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
   
+  // --- 界面状态 ---
   const [showProfile, setShowProfile] = useState(false)
   const [showBank, setShowBank] = useState(false)
-  const [showStock, setShowStock] = useState(false) // <--- 新增：股市弹窗
-  
+  const [showStock, setShowStock] = useState(false)
+  const [activeTab, setActiveTab] = useState('life') // 'life', 'build', 'finance'
   const [lang, setLang] = useState('zh') 
 
+  // --- 数值 ---
   const [cash, setCash] = useState(0)
   const [energy, setEnergy] = useState(0)
   const [income, setIncome] = useState(0)
@@ -75,6 +78,7 @@ function GameWorld({ session, isGuest }) {
   const [nextSleepTime, setNextSleepTime] = useState(0) 
   const [tick, setTick] = useState(0) 
 
+  // --- 地图 ---
   const [myPosition, setMyPosition] = useState([0, 0, 0])
   const posRef = useRef([0, 0, 0])
   const [otherPlayers, setOtherPlayers] = useState({}) 
@@ -352,7 +356,7 @@ function GameWorld({ session, isGuest }) {
     alert(`✅ 形象已更新`)
   }
 
-  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式\n\n请注册账号！"); return true } return false }
+  const checkGuest = () => { if (isGuest) { alert("🔒 请注册账号"); return true } return false }
   
   const work = async () => {
     if (checkGuest()) return
@@ -424,6 +428,7 @@ function GameWorld({ session, isGuest }) {
   const handlePurchase = async () => {
     if (checkGuest()) return
     if (!activeShop) return
+    
     if (activeShop.owner_id !== myId) {
       const PRICE = 50 
       if (cash < PRICE) { alert("❌ 钱不够"); return }
@@ -436,6 +441,7 @@ function GameWorld({ session, isGuest }) {
     } else {
       const currentLevel = activeShop.level || 1
       if (currentLevel >= MAX_LEVEL) { alert("🏆 已满级"); return }
+      
       const upgradeCost = 5000 * Math.pow(2, currentLevel - 1)
       const confirm = window.confirm(`🆙 升级店铺 (Lv.${currentLevel} -> Lv.${currentLevel+1})\n\n费用: $${upgradeCost.toLocaleString()}\n收益: +10%`)
       if (!confirm) return
@@ -529,7 +535,6 @@ function GameWorld({ session, isGuest }) {
           <button onClick={() => setShowChat(true)} style={{position:'absolute', right:'20px', bottom:'180px', width:'50px', height:'50px', borderRadius:'50%', background:'white', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.2)', fontSize:'24px', cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'}}>💬</button>
         )}
 
-        {/* 交互弹窗 */}
         {activeShop && (
            <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'}}>
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
@@ -578,26 +583,50 @@ function GameWorld({ session, isGuest }) {
              <div>⚡ {energy}</div>
              <div style={{color:'#ffa502'}}>+{income.toLocaleString()}/s</div>
           </div>
-          <div className="actions-scroll">
-            <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
-            <ActionBtn title="🌭 流动摊 (200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
+          
+          {/* ✅ 修复：使用【选项卡布局】，彻底解决按钮拥挤问题 */}
+          <div className="control-panel">
+            <div className="tabs">
+              <button className={`tab-btn ${activeTab==='life'?'active':''}`} onClick={()=>setActiveTab('life')}>🔨 生活</button>
+              <button className={`tab-btn ${activeTab==='build'?'active':''}`} onClick={()=>setActiveTab('build')}>🏗️ 建造</button>
+              <button className={`tab-btn ${activeTab==='finance'?'active':''}`} onClick={()=>setActiveTab('finance')}>💸 金融</button>
+            </div>
             
-            <ActionBtn title="🏪 便利店 (5k)" onClick={() => buildBuilding('store', 5000, 15, '便利店')} color="#9b59b6" />
-            <ActionBtn title="☕ 咖啡馆 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
-            <ActionBtn title="⛽ 加油站 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
-            <ActionBtn title="🏢 科技园 (1000w)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
-            <ActionBtn title="🌆 摩天大楼 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
-            <ActionBtn title="🚀 火箭基地 (1000亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
-            
-            <ActionBtn 
-              title={cooldown > 0 ? `💤 ${cooldown}s` : "💤 睡觉"} 
-              onClick={sleep} 
-              color="#2ed573" 
-              disabled={cooldown > 0}
-            />
-            {/* 增加独立的股市和银行按钮 */}
-            <ActionBtn title="📈 股市" onClick={() => setShowStock(true)} color="#34495e" />
-            <ActionBtn title="🏦 银行" onClick={() => setShowBank(true)} color="#2c3e50" />
+            <div className="actions-area">
+              {/* 生活 Tab */}
+              {activeTab === 'life' && (
+                <>
+                  <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
+                  <ActionBtn title="🌭 流动摊 ($200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
+                  <ActionBtn 
+                    title={cooldown > 0 ? `💤 冷却 (${cooldown}s)` : "💤 睡觉"} 
+                    onClick={sleep} 
+                    color="#2ed573" 
+                    disabled={cooldown > 0}
+                  />
+                </>
+              )}
+
+              {/* 建造 Tab (分类清晰) */}
+              {activeTab === 'build' && (
+                <>
+                  <ActionBtn title="🏪 便利店 (5k)" onClick={() => buildBuilding('store', 5000, 15, '便利店')} color="#9b59b6" />
+                  <ActionBtn title="☕ 咖啡馆 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
+                  <ActionBtn title="⛽ 加油站 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
+                  <ActionBtn title="🏢 科技园 (1kw)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
+                  <ActionBtn title="🌆 摩天楼 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
+                  <ActionBtn title="🚀 发射场 (1千亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
+                </>
+              )}
+
+              {/* 金融 Tab */}
+              {activeTab === 'finance' && (
+                <>
+                  <ActionBtn title="🏦 中央银行" onClick={() => setShowBank(true)} color="#2c3e50" />
+                  <ActionBtn title="📈 证券市场" onClick={() => setShowStock(true)} color="#34495e" />
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
