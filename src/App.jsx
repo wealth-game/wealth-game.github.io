@@ -12,8 +12,7 @@ import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
 const MAX_LEVEL = 6 
-// 🚫 世界边界：扩大到 1000 米
-const WORLD_LIMIT = 1000 
+const WORLD_LIMIT = 1000
 
 const getRandomSpawn = () => {
   const angle = Math.random() * Math.PI * 2
@@ -34,64 +33,28 @@ function App() {
   const [session, setSession] = useState(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [isGuest, setIsGuest] = useState(false)
-  const [networkError, setNetworkError] = useState(false) // 新增：网络错误状态
+  const [networkError, setNetworkError] = useState(false)
 
   useEffect(() => {
-    // 设置一个 10秒 超时检测
     const timeout = setTimeout(() => {
-      if (isAuthLoading) {
-        setNetworkError(true)
-        setIsAuthLoading(false)
-      }
+      if (isAuthLoading) { setNetworkError(true); setIsAuthLoading(false) }
     }, 10000)
 
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       clearTimeout(timeout)
-      if (error) {
-        console.error("Auth Error:", error)
-        setNetworkError(true)
-      } else {
-        setSession(session)
-        setIsAuthLoading(false)
-      }
-    }).catch(err => {
-      clearTimeout(timeout)
-      console.error("Network Error:", err)
-      setNetworkError(true)
-    })
+      if (error) setNetworkError(true)
+      else { setSession(session); setIsAuthLoading(false) }
+    }).catch(() => { clearTimeout(timeout); setNetworkError(true) })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
-      if (_event === 'SIGNED_OUT') {
-        setIsGuest(false)
-        window.location.reload()
-      }
+      if (_event === 'SIGNED_OUT') { setIsGuest(false); window.location.reload() }
     })
     return () => subscription.unsubscribe()
   }, [])
 
-  // --- 错误提示界面 ---
-  if (networkError) {
-    return (
-      <div className="loading-screen" style={{flexDirection:'column', gap:'20px', textAlign:'center', padding:'20px'}}>
-        <div style={{fontSize:'40px'}}>📡</div>
-        <h2>无法连接到服务器</h2>
-        <p style={{fontSize:'14px', color:'#aaa', maxWidth:'300px'}}>
-          检测到网络连接超时或被阻断。<br/>
-          由于游戏服务器位于海外，中国大陆用户可能需要使用加速工具。
-        </p>
-        <button 
-          onClick={() => window.location.reload()} 
-          style={{padding:'10px 20px', background:'#3498db', color:'white', border:'none', borderRadius:'8px', fontSize:'16px', cursor:'pointer'}}
-        >
-          重试连接
-        </button>
-      </div>
-    )
-  }
-
-  if (isAuthLoading) return <div className="loading-screen">🚀 正在连接元宇宙...</div>
-
+  if (networkError) return <div className="loading-screen" style={{flexDirection:'column'}}><h2>连接超时</h2><button onClick={()=>window.location.reload()}>重试</button></div>
+  if (isAuthLoading) return <div className="loading-screen">Loading World...</div>
   if (!session && !isGuest) return <Auth onGuestClick={() => setIsGuest(true)} />
   return <GameWorld session={session} isGuest={isGuest} />
 }
@@ -101,10 +64,10 @@ function GameWorld({ session, isGuest }) {
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
+  
   const [showProfile, setShowProfile] = useState(false)
   const [showBank, setShowBank] = useState(false)
   const [showStock, setShowStock] = useState(false)
-  
   const [selectedPlayer, setSelectedPlayer] = useState(null)
   const [activeTab, setActiveTab] = useState('life')
   const [lang, setLang] = useState('zh') 
@@ -114,7 +77,6 @@ function GameWorld({ session, isGuest }) {
   const [income, setIncome] = useState(0)
   const [deposit, setDeposit] = useState(0) 
   const [loan, setLoan] = useState(0)       
-  
   const [loading, setLoading] = useState(true)
   const [isWorking, setIsWorking] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
@@ -135,7 +97,6 @@ function GameWorld({ session, isGuest }) {
   
   const lastFetchPos = useRef([9999, 9999, 9999])
   const FETCH_THRESHOLD = 20 
-  // 视野加大到 120米
   const VIEW_DISTANCE = 120 
   
   const [isMoving, setIsMoving] = useState(false)
@@ -153,13 +114,20 @@ function GameWorld({ session, isGuest }) {
   const triggerFloatText = (text, position) => setFloatEvents(prev => [...prev, { text, pos: position }])
 
   const fetchNearbyBuildings = async (x, z) => {
-    // 增加错误处理
     const { data, error } = await supabase.rpc('get_nearby_buildings', { center_x: x, center_z: z, radius: VIEW_DISTANCE })
-    if (error) {
-       console.error("加载地图失败:", error)
-       return
-    }
     if (data) setBuildings(data)
+  }
+
+  // --- 动作定义 (必须在 return 之前) ---
+
+  const checkCollision = (targetPos) => {
+    const [tx, ty, tz] = targetPos
+    if (Math.abs(tx) < 3.5 && Math.abs(tz) < 3.5) return true
+    for (let b of buildings) {
+      const dx = tx - b.x; const dz = tz - b.z
+      if (Math.sqrt(dx*dx + dz*dz) < 1.5) return true
+    }
+    return false
   }
 
   const moveCharacter = (direction) => {
@@ -179,7 +147,6 @@ function GameWorld({ session, isGuest }) {
       default: return;
     }
 
-    // 🛡️ 边界限制 (1000米)
     if (Math.abs(newPos[0]) > WORLD_LIMIT || Math.abs(newPos[2]) > WORLD_LIMIT) {
        if(Math.random() > 0.95) triggerFloatText("🚧 世界尽头", newPos)
        return
@@ -213,17 +180,6 @@ function GameWorld({ session, isGuest }) {
     }
   }
 
-  const checkCollision = (targetPos) => {
-    const [tx, ty, tz] = targetPos
-    if (Math.abs(tx) < 3.5 && Math.abs(tz) < 3.5) return true
-    for (let b of buildings) {
-      const dx = tx - b.x; const dz = tz - b.z
-      if (Math.sqrt(dx*dx + dz*dz) < 1.5) return true
-    }
-    return false
-  }
-
-  // --- 处理点击其他玩家 ---
   const handlePlayerClick = (playerData) => {
     if (playerData.userId === myId) return
     setSelectedPlayer(playerData)
@@ -255,6 +211,8 @@ function GameWorld({ session, isGuest }) {
       alert(`❌ 失败: ${data?.msg || error?.message}`)
     }
   }
+
+  // --- 初始化与网络 ---
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -298,9 +256,7 @@ function GameWorld({ session, isGuest }) {
             
             await supabase.from('profiles').update({ cash: profile.cash + offlineCash, last_active_at: new Date().toISOString() }).eq('id', myId)
           }
-        } catch(e) {
-          console.error("Init Error", e)
-        }
+        } catch(e) { console.error(e) }
       } else {
         setCash(0); setEnergy(100); setIncome(0); setMyName(`游客${myId.substr(myId.length-4)}`)
       }
@@ -310,7 +266,12 @@ function GameWorld({ session, isGuest }) {
       joinMultiplayerRoom(myId, spawnPos)
     }
     initGame()
-    return () => { if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null } }
+    return () => { 
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
+        channelRef.current = null
+      }
+    }
   }, [isGuest, myId]) 
 
   useEffect(() => {
@@ -414,6 +375,7 @@ function GameWorld({ session, isGuest }) {
     return () => { clearInterval(timer); clearInterval(saveTimer) }
   }, [isGuest, myId])
 
+  // --- 关键函数：操作逻辑 ---
   const handleBankTransaction = async (type, amount) => {
     if (isGuest) { alert("🔒 游客模式"); return }
     const { data, error } = await supabase.rpc('bank_transaction', { user_id: myId, amount, action_type: type })
@@ -475,7 +437,7 @@ function GameWorld({ session, isGuest }) {
       await supabase.from('profiles').update({ energy: 100 }).eq('id', myId)
       triggerFloatText("⚡精力满", posRef.current)
   }
-  
+
   const goHome = async () => {
       const { data } = await supabase.from('buildings').select('x, z').eq('owner_id', myId).order('created_at', { ascending: true }).limit(1).single()
       let homePos = getRandomSpawn()
@@ -523,7 +485,7 @@ function GameWorld({ session, isGuest }) {
         setCash(prev => prev - PRICE); setEnergy(prev => Math.min(prev + 20, 100))
         triggerFloatText(`-$${PRICE}`, posRef.current)
         triggerFloatText("⚡+20", [posRef.current[0], posRef.current[1]+0.5, posRef.current[2]])
-        setActiveShop(null) // 交易成功关闭弹窗
+        setActiveShop(null) // ✅ 交易后关闭
       } else { alert(`❌ 交易失败`) }
     } else {
       const currentLevel = activeShop.level || 1
@@ -545,7 +507,7 @@ function GameWorld({ session, isGuest }) {
       
       setBuildings(prev => prev.map(b => b.id === activeShop.id ? { ...b, level: currentLevel + 1 } : b))
       setActiveShop(prev => ({ ...prev, level: currentLevel + 1 }))
-      setActiveShop(null)
+      setActiveShop(null) // ✅ 升级后关闭
     }
   }
 

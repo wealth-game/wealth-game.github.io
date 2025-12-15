@@ -6,8 +6,9 @@ import {
   PerspectiveCamera, 
   ContactShadows, 
   Html,
-  Sky, // ✅ 新增：物理天空
-  BakeShadows // ✅ 新增：烘焙阴影(优化性能)
+  Sky,
+  Environment, // 重新启用，但使用本地模拟
+  BakeShadows
 } from '@react-three/drei'
 
 // 引入资源
@@ -25,99 +26,85 @@ import {
   TechOffice, Skyscraper, RocketBase 
 } from './models/Buildings'
 
-// 定义世界边界
 const WORLD_LIMIT = 1000
 
-// === 1. 环境设置 (画质升级核心) ===
+// === 1. 高级光影系统 (解决"丑"的核心) ===
 function EnvironmentSet() {
   return (
     <>
       {/* 
-         1. 物理天空 (Sky): 
-         纯代码生成的真实大气层，不需要下载图片，国内秒开且极美。
-         sunPosition 控制太阳位置，决定光影方向。
+         1. 物理天空 
+         调整为“黄金时段”参数，让光线带有淡淡的暖色调
       */}
       <Sky 
         distance={450000} 
-        sunPosition={[100, 20, 100]} 
-        inclination={0} 
-        azimuth={0.25} 
+        sunPosition={[10, 2, 10]} // 侧向阳光，产生拉长的漂亮阴影
+        inclination={0.6} 
+        azimuth={0.1} 
       />
 
       {/* 
-         2. 半球光 (HemisphereLight): 
-         模拟天空光(蓝色)和地面反光(绿色/灰色)的混合，
-         让物体阴暗面不再是死黑，而是有丰富的色调。
+         2. 关键修复：代码生成环境 
+         background={false} 意味着我们不显示它的贴图，只用它来提供【反射】
+         这会让玻璃和金属瞬间亮起来！
       */}
+      <Environment 
+        frames={Infinity} 
+        resolution={128} 
+        preset="apartment" // 使用内置极小预设
+      />
+
+      {/* 3. 补光 */}
       <hemisphereLight 
-        skyColor="#87CEEB" // 天空蓝
-        groundColor="#f0f2f5" // 地面灰白
         intensity={0.6} 
+        color="#ffffff" 
+        groundColor="#b9d5ff" 
       />
 
-      {/* 3. 主阳光 (DirectionalLight) */}
+      {/* 4. 主阳光 (增加阴影品质) */}
       <directionalLight 
-        position={[50, 80, 30]} // 太阳高一点，阴影短一点，更像正午
-        intensity={1.5} 
+        position={[20, 30, 10]} 
+        intensity={1.2} 
         castShadow 
-        shadow-mapSize={[1024, 1024]} 
-        shadow-bias={-0.0001} // 减少阴影波纹
+        shadow-mapSize={[2048, 2048]} // 提高阴影分辨率
+        shadow-camera-left={-50}
+        shadow-camera-right={50}
+        shadow-camera-top={50}
+        shadow-camera-bottom={-50}
+        shadow-bias={-0.0005}
       />
 
-      {/* 
-         4. 迷雾 (Fog): 
-         颜色要跟天空混为一体 (#f0f2f5)，制造空气透视感
-      */}
-      <fog attach="fog" args={['#f0f2f5', 30, 120]} />
-      
-      {/* 性能优化：静态阴影烘焙 */}
-      <BakeShadows />
+      {/* 5. 景深迷雾：让远近更有层次感 */}
+      <fog attach="fog" args={['#dff9fb', 40, 150]} />
     </>
   )
 }
 
-// 2. 地面
 function Ground() {
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
         <planeGeometry args={[WORLD_LIMIT * 2, WORLD_LIMIT * 2]} />
-        <meshStandardMaterial color="#f0f2f5" roughness={1} />
+        {/* 材质微调：加入一点点金属感和粗糙度对比 */}
+        <meshStandardMaterial color="#f0f2f5" roughness={0.6} metalness={0.05} />
       </mesh>
+      <GridMap size={2000} divisions={1000} />
       
-      <GridMap size={WORLD_LIMIT * 2} divisions={WORLD_LIMIT} />
-      
-      {/* ✅ 恢复接触阴影：让物体看起来真的“踩”在地上，而不是飘着 */}
+      {/* 落地阴影：调整得更自然 */}
       <ContactShadows 
-        resolution={512} 
-        scale={60} 
-        blur={2} 
+        resolution={1024} 
+        scale={80} 
+        blur={2.5} 
         opacity={0.3} 
-        far={2} 
-        color="#000000" 
+        far={10} 
+        color="#1a1a1a" 
       />
     </>
   )
 }
 
-// --- 边界空气墙 ---
-function WorldBorder() {
-  const height = 50
-  const wallConfig = { transparent: true, opacity: 0.05, color: '#ff4757', side: 2 } // 稍微淡一点，别太吓人
-  
-  return (
-    <group>
-      <mesh position={[0, height/2, -WORLD_LIMIT]}><planeGeometry args={[WORLD_LIMIT*2, height]} /><meshStandardMaterial {...wallConfig} /></mesh>
-      <mesh position={[0, height/2, WORLD_LIMIT]}><planeGeometry args={[WORLD_LIMIT*2, height]} /><meshStandardMaterial {...wallConfig} /></mesh>
-      <mesh position={[-WORLD_LIMIT, height/2, 0]} rotation={[0, Math.PI/2, 0]}><planeGeometry args={[WORLD_LIMIT*2, height]} /><meshStandardMaterial {...wallConfig} /></mesh>
-      <mesh position={[WORLD_LIMIT, height/2, 0]} rotation={[0, Math.PI/2, 0]}><planeGeometry args={[WORLD_LIMIT*2, height]} /><meshStandardMaterial {...wallConfig} /></mesh>
-    </group>
-  )
-}
-
-// 3. 其他玩家
 function OtherPlayer({ position, isWorking, color, name, message, onClick }) {
-  if (!position || position.length < 3 || isNaN(position[0]) || isNaN(position[2])) return null
+  if (!position || isNaN(position[0])) return null
   return (
     <group position={position} onClick={(e) => { e.stopPropagation(); onClick() }}>
       <Player isWorking={isWorking} skin={color} />
@@ -131,24 +118,18 @@ function OtherPlayer({ position, isWorking, color, name, message, onClick }) {
   )
 }
 
-// === 主场景 ===
 export default function GameScene({ 
   isWorking, hasShop, myPosition, myColor, myMessage, 
   otherPlayers, buildings, currentGrid, floatEvents, lang = 'zh',
   onPlayerClick
 }) {
   
-  // 树木生成
   const trees = useMemo(() => {
     const temp = []
-    for(let i=0; i<200; i++) {
+    for(let i=0; i<150; i++) {
       const angle = Math.random() * Math.PI * 2
-      const radius = 20 + Math.random() * 180 
-      temp.push({
-        x: Math.sin(angle) * radius,
-        z: Math.cos(angle) * radius,
-        type: Math.random() > 0.5 ? 'pine' : 'round'
-      })
+      const radius = 25 + Math.random() * 200 
+      temp.push({ x: Math.sin(angle) * radius, z: Math.cos(angle) * radius, type: Math.random() > 0.5 ? 'pine' : 'round' })
     }
     return temp
   }, [])
@@ -159,7 +140,7 @@ export default function GameScene({
     if (!buildings) return []
     const seen = new Set()
     return buildings.filter(b => {
-      if (b.x === null || b.z === null || isNaN(b.x) || isNaN(b.z)) return false
+      if (b.x === null || isNaN(b.x)) return false
       if (seen.has(b.id)) return false
       seen.add(b.id)
       return true
@@ -167,15 +148,19 @@ export default function GameScene({
   }, [buildings])
 
   return (
-    <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: 'linear-gradient(to bottom, #f0f2f5, #ffffff)' }}>
+    <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: '#dff9fb' }}>
       {/* 
-         shadows="soft" 可能在部分手机卡，但 basic 太丑。
-         我们用 basic + ContactShadows 的组合来平衡性能和画质。
+         shadows 设置为 true (默认为 PCFSoftShadows) 
+         这比 shadows="basic" 好看10倍，且性能平衡 
       */}
-      <Canvas shadows="basic" dpr={[1, 1.5]}>
+      <Canvas 
+        shadows 
+        dpr={[1, 2]} 
+        gl={{ antialias: true, stencil: false, depth: true }}
+      >
         
-        <PerspectiveCamera makeDefault position={[0, 12, 16]} fov={45} />
-        <OrbitControls enableZoom={true} minDistance={5} maxDistance={60} target={safeMyPos} />
+        <PerspectiveCamera makeDefault position={[0, 15, 25]} fov={40} />
+        <OrbitControls enableZoom={true} minDistance={8} maxDistance={80} target={safeMyPos} makeDefault />
 
         <Suspense fallback={<Html center>Loading...</Html>}>
           <EnvironmentSet />
@@ -184,14 +169,15 @@ export default function GameScene({
           
           <FloatingTextManager events={floatEvents} />
           <NPCSystem />
+          
           {currentGrid && <SelectionBox x={currentGrid.x} z={currentGrid.z} />}
           <Monument />
 
-          {/* 建筑渲染 */}
+          {/* 建筑 */}
           {validBuildings.map(b => {
             const pos = [b.x, 0, b.z]
             const owner = b.owner_name || "未知富豪"
-            const level = b.level ? Number(b.level) : 1
+            const level = b.level || 1
             const type = b.type || 'store'
 
             switch(type) {
@@ -216,21 +202,27 @@ export default function GameScene({
 
           {otherPlayers && Object.keys(otherPlayers).map(key => {
             const p = otherPlayers[key]
-            if (!p.position) return null
             return <OtherPlayer key={key} position={p.position} color={p.skin || p.color} isWorking={p.isWorking} name={p.name} message={p.message} onClick={() => onPlayerClick(p)} />
           })}
           
           {trees.map((t, i) => {
-             const isBlocked = validBuildings.some(b => {
-               const dx = t.x - b.x; const dz = t.z - b.z
-               return Math.sqrt(dx*dx + dz*dz) < 3.5 
-             })
-             if (isBlocked) return null 
-             return <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
+             const isBlocked = validBuildings.some(b => Math.sqrt((t.x-b.x)**2 + (t.z-b.z)**2) < 4)
+             return isBlocked ? null : <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
           })}
-
         </Suspense>
       </Canvas>
     </div>
+  )
+}
+
+function WorldBorder() {
+  const wallConfig = { transparent: true, opacity: 0.05, color: '#ff4757', side: 2 }
+  return (
+    <group>
+      <mesh position={[0, 25, -WORLD_LIMIT]}><planeGeometry args={[WORLD_LIMIT*2, 50]} /><meshStandardMaterial {...wallConfig} /></mesh>
+      <mesh position={[0, 25, WORLD_LIMIT]}><planeGeometry args={[WORLD_LIMIT*2, 50]} /><meshStandardMaterial {...wallConfig} /></mesh>
+      <mesh position={[-WORLD_LIMIT, 25, 0]} rotation={[0, Math.PI/2, 0]}><planeGeometry args={[WORLD_LIMIT*2, 50]} /><meshStandardMaterial {...wallConfig} /></mesh>
+      <mesh position={[WORLD_LIMIT, 25, 0]} rotation={[0, Math.PI/2, 0]}><planeGeometry args={[WORLD_LIMIT*2, 50]} /><meshStandardMaterial {...wallConfig} /></mesh>
+    </group>
   )
 }
