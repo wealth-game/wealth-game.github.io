@@ -12,8 +12,6 @@ import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
 const MAX_LEVEL = 6 
-// 🚫 世界边界：限制在 -100 到 100 米范围内，防止跑丢
-const WORLD_LIMIT = 100 
 
 const getRandomSpawn = () => {
   const angle = Math.random() * Math.PI * 2
@@ -60,6 +58,7 @@ function GameWorld({ session, isGuest }) {
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
+  
   const [showProfile, setShowProfile] = useState(false)
   const [showBank, setShowBank] = useState(false)
   const [showStock, setShowStock] = useState(false)
@@ -132,13 +131,6 @@ function GameWorld({ session, isGuest }) {
       default: return;
     }
 
-    // 🛡️ 边界检查：防止跑出世界尽头
-    if (Math.abs(newPos[0]) > WORLD_LIMIT || Math.abs(newPos[2]) > WORLD_LIMIT) {
-      // 撞空气墙提示
-      if (Math.random() > 0.9) triggerFloatText("🚧 边界", newPos)
-      return
-    }
-
     if (checkCollision(newPos)) {
       if (navigator.vibrate) navigator.vibrate(50)
       return 
@@ -167,7 +159,6 @@ function GameWorld({ session, isGuest }) {
     }
   }
 
-  // 人物碰撞检测：撞建筑 (半径1.5)
   const checkCollision = (targetPos) => {
     const [tx, ty, tz] = targetPos
     if (Math.abs(tx) < 3.5 && Math.abs(tz) < 3.5) return true
@@ -178,33 +169,34 @@ function GameWorld({ session, isGuest }) {
     return false
   }
 
-  // --- 处理转账 (增加手续费提示) ---
+  // --- 🔴 关键修复：补回 handlePlayerClick 函数 ---
+  const handlePlayerClick = (playerData) => {
+    if (playerData.userId === myId) return
+    setSelectedPlayer(playerData)
+  }
+
+  // --- 补回 handleTransfer 函数 ---
   const handleTransfer = async (targetUserId, amount) => {
     if (isGuest) { alert("🔒 游客无法转账"); return }
     if (cash < amount) { alert("❌ 余额不足"); return }
-
-    // 🛡️ 经济控制：增加 10% 交易税 (防止小号无限刷钱)
+    
+    // 扣税 10%
     const tax = Math.ceil(amount * 0.1)
     const totalCost = amount + tax
     
     if (!window.confirm(`💸 转账提醒\n\n转给对方: $${amount}\n银行手续费(10%): $${tax}\n总共扣除: $${totalCost}\n\n确定转账吗？`)) {
       return
     }
-    
+
     if (cash < totalCost) { alert("❌ 余额不足以支付手续费"); return }
 
-    // 前端先扣钱，然后调用后端 (后端函数如果没扣税逻辑，这里只是视觉模拟，建议后端也改，但这里先做前端限制)
-    // 更好的做法是更新 SQL 函数支持收税，这里暂时简单调用
     const { data, error } = await supabase.rpc('transfer_cash', {
-      sender_id: myId, receiver_id: targetUserId, amount: amount // 注意：后端目前是直接转，建议去 SQL 改一下
+      sender_id: myId, receiver_id: targetUserId, amount: amount
     })
 
     if (data && data.status === 'success') {
-      // 模拟扣税：手动多扣一点，或者让后端处理
-      // 这里为了简单，我们假设后端没改，我们在前端额外扣除手续费（虽然不安全，但在MVP阶段够用）
-      // 正确做法是去改 Postgres function，这里先不展开
-      setCash(prev => prev - amount) // 暂时按原价扣，下次更新SQL再加税
-      triggerFloatText(`-$${amount}`, posRef.current)
+      setCash(prev => prev - totalCost) // 扣除含税总额
+      triggerFloatText(`-$${totalCost}`, posRef.current)
       setSelectedPlayer(null) 
       if (channelRef.current) {
         channelRef.current.send({
@@ -220,7 +212,10 @@ function GameWorld({ session, isGuest }) {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (showChat) { if (e.key === 'Enter') handleSendChat(); return }
+      if (showChat) {
+        if (e.key === 'Enter') handleSendChat()
+        return 
+      }
       if (e.key === 'Enter') { setShowChat(true); return }
       if (e.key === 'w' || e.key === 'ArrowUp') moveCharacter('up')
       if (e.key === 's' || e.key === 'ArrowDown') moveCharacter('down')
@@ -238,7 +233,10 @@ function GameWorld({ session, isGuest }) {
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', myId).single()
         if (profile) {
           const { data: home } = await supabase.from('buildings').select('x, z').eq('owner_id', myId).order('created_at', { ascending: true }).limit(1).single()
-          if (home) spawnPos = getSafeSpawnAround(home.x, home.z)
+          if (home) {
+            spawnPos = getSafeSpawnAround(home.x, home.z)
+            console.log("🏠 欢迎回家")
+          }
           
           let offlineCash = 0
           if (profile.last_active_at && profile.passive_income > 0) {
@@ -247,8 +245,11 @@ function GameWorld({ session, isGuest }) {
           }
           if (offlineCash > 0) alert(`💰 欢迎回来！\n\n离线收益: $${offlineCash.toLocaleString()}`)
 
-          setCash(profile.cash + offlineCash); setEnergy(profile.energy); setIncome(profile.passive_income || 0)
-          setDeposit(profile.deposit || 0); setLoan(profile.loan || 0)
+          setCash(profile.cash + offlineCash)
+          setEnergy(profile.energy)
+          setIncome(profile.passive_income || 0)
+          setDeposit(profile.deposit || 0)
+          setLoan(profile.loan || 0)
           if (profile.nickname) setMyName(profile.nickname)
           if (profile.avatar) setMySkin(profile.avatar)
           
@@ -441,31 +442,20 @@ function GameWorld({ session, isGuest }) {
       if (data) {
         homePos = getSafeSpawnAround(data.x, data.z)
         alert("🏠 欢迎回家")
-      } else { alert("🏠 暂无房产，传送至安全区") }
+      } else {
+        alert("🏠 暂无房产，传送至安全区")
+      }
       setMyPosition(homePos); posRef.current = homePos
       fetchNearbyBuildings(homePos[0], homePos[2]); lastFetchPos.current = homePos
       setCurrentGrid({x: Math.round(homePos[0]), z: Math.round(homePos[2])}); setActiveShop(null) 
   }
 
-  // --- 建造逻辑 (增加间距检查) ---
   const buildBuilding = async (type, cost, incomeBoost, name) => {
     if (checkGuest()) return
     if (cash < cost) { alert(`❌ 资金不足\n需要: $${cost.toLocaleString()}`); return }
-    
-    // 1. 纪念碑保护
     if (Math.abs(currentGrid.x) < 3 && Math.abs(currentGrid.z) < 3) { alert("❌ 保护区"); return }
-    
-    // 2. 🛡️ 城市规划法案：强制间距检查
-    // 要求周围 3.5 米内不能有其他建筑中心点 (保证至少留出1格通道)
-    const isTooClose = buildings.some(b => {
-       const dist = Math.sqrt((b.x - currentGrid.x)**2 + (b.z - currentGrid.z)**2)
-       return dist < 3.5 // 如果小于3.5米，说明挨得太近了
-    })
-
-    if (isTooClose) { 
-      alert("❌ 建筑间距过近！\n请留出消防通道 (至少隔开1个格子)")
-      return 
-    }
+    const isOccupied = buildings.some(b => Math.abs(b.x - currentGrid.x) < 1.5 && Math.abs(b.z - currentGrid.z) < 1.5)
+    if (isOccupied) { alert("❌ 太挤了"); return }
 
     const newCash = cash - cost; const newIncome = income + incomeBoost
     setCash(newCash); setIncome(newIncome)
@@ -474,20 +464,17 @@ function GameWorld({ session, isGuest }) {
     setBuildings(prev => [...prev, tempB])
     triggerFloatText(`-$${cost}`, posRef.current)
 
-    // 弹开
     const escapePos = [posRef.current[0] + 2, 0, posRef.current[2]]
     setMyPosition(escapePos); posRef.current = escapePos
 
     await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
     await supabase.from('buildings').insert({ owner_id: myId, type: type, x: currentGrid.x, z: currentGrid.z, level: 1 })
-    
-    // 乐观更新后，立即把周围的树砍掉 (重新加载一下或者本地过滤树木)
-    // GameScene 里会自动重算
   }
 
   const handlePurchase = async () => {
     if (checkGuest()) return
     if (!activeShop) return
+    
     if (activeShop.owner_id !== myId) {
       const PRICE = 50 
       if (cash < PRICE) { alert("❌ 钱不够"); return }
@@ -496,11 +483,12 @@ function GameWorld({ session, isGuest }) {
         setCash(prev => prev - PRICE); setEnergy(prev => Math.min(prev + 20, 100))
         triggerFloatText(`-$${PRICE}`, posRef.current)
         triggerFloatText("⚡+20", [posRef.current[0], posRef.current[1]+0.5, posRef.current[2]])
-        setActiveShop(null) // 交易成功关闭弹窗
+        setActiveShop(null) // 关闭弹窗
       } else { alert(`❌ 交易失败`) }
     } else {
       const currentLevel = activeShop.level || 1
       if (currentLevel >= MAX_LEVEL) { alert("🏆 已满级"); return }
+      
       const upgradeCost = 5000 * Math.pow(2, currentLevel - 1)
       const confirm = window.confirm(`🆙 升级店铺 (Lv.${currentLevel} -> Lv.${currentLevel+1})\n\n费用: $${upgradeCost.toLocaleString()}\n收益: +10%`)
       if (!confirm) return
@@ -511,13 +499,12 @@ function GameWorld({ session, isGuest }) {
       setCash(newCash); setIncome(newIncome)
       triggerFloatText(`-$${upgradeCost}`, posRef.current)
       triggerFloatText("UPGRADE!", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
+      setActiveShop(null) // 关闭弹窗
 
       await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
       await supabase.from('buildings').update({ level: currentLevel + 1 }).eq('id', activeShop.id)
       
       setBuildings(prev => prev.map(b => b.id === activeShop.id ? { ...b, level: currentLevel + 1 } : b))
-      setActiveShop(prev => ({ ...prev, level: currentLevel + 1 }))
-      setActiveShop(null) // 升级成功关闭弹窗
     }
   }
 
@@ -526,12 +513,6 @@ function GameWorld({ session, isGuest }) {
   if (loading) return <div className="loading-screen"><div className="spinner"></div></div>
 
   const cooldown = Math.ceil((nextSleepTime - Date.now()) / 1000)
-
-  // 辅助函数：根据类型获取中文名
-  const getBuildingName = (type) => {
-    const map = { store: '便利店', coffee: '咖啡馆', gas: '加油站', office: '科技园', tower: '摩天大楼', rocket: '火箭基地' }
-    return map[type] || '建筑'
-  }
 
   return (
     <div className="app-container">
@@ -567,7 +548,7 @@ function GameWorld({ session, isGuest }) {
           myPosition={myPosition} myColor={mySkin} myMessage={myMessage}
           otherPlayers={otherPlayers} buildings={buildings} currentGrid={currentGrid}
           floatEvents={floatEvents} lang={lang} 
-          onPlayerClick={handlePlayerClick}
+          onPlayerClick={handlePlayerClick} // ✅ 已修复
         />
       </div>
 
@@ -611,7 +592,7 @@ function GameWorld({ session, isGuest }) {
         )}
 
         {activeShop && (
-           <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'}}>
+           <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto', zIndex: 9999}}>
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
                  <div style={{fontSize:'12px', color:'#888', marginBottom:'5px'}}>
                    {activeShop.owner_id === myId ? "🔑 我的产业" : `🏪 ${getBuildingName(activeShop.type)}`}
@@ -670,7 +651,7 @@ function GameWorld({ session, isGuest }) {
               {activeTab === 'life' && (
                 <>
                   <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
-                  <ActionBtn title="🌭 流动摊 ($200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
+                  <ActionBtn title="🌭 流动摊 (200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
                   <ActionBtn 
                     title={cooldown > 0 ? `💤 冷却 (${cooldown}s)` : "💤 睡觉"} 
                     onClick={sleep} 
@@ -686,8 +667,8 @@ function GameWorld({ session, isGuest }) {
                   <ActionBtn title="☕ 咖啡馆 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
                   <ActionBtn title="⛽ 加油站 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
                   <ActionBtn title="🏢 科技园 (1kw)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
-                  <ActionBtn title="🌆 摩天大楼 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
-                  <ActionBtn title="🚀 火箭基地 (1千亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
+                  <ActionBtn title="🌆 摩天楼 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
+                  <ActionBtn title="🚀 发射场 (1千亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
                 </>
               )}
 
