@@ -14,6 +14,7 @@ const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: 
 const MAX_LEVEL = 6 
 const WORLD_LIMIT = 1000
 
+// 随机出生点
 const getRandomSpawn = () => {
   const angle = Math.random() * Math.PI * 2
   const radius = 6 + Math.random() * 4
@@ -48,12 +49,21 @@ function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
-      if (_event === 'SIGNED_OUT') { setIsGuest(false); window.location.reload() }
+      if (_event === 'SIGNED_OUT') {
+        setIsGuest(false)
+        window.location.reload()
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
 
-  if (networkError) return <div className="loading-screen" style={{flexDirection:'column'}}><h2>连接超时</h2><button onClick={()=>window.location.reload()}>重试</button></div>
+  if (networkError) return (
+    <div className="loading-screen" style={{flexDirection:'column', gap:'20px'}}>
+      <h2>📡 连接超时</h2>
+      <button onClick={()=>window.location.reload()} style={{padding:'10px'}}>重试</button>
+    </div>
+  )
+
   if (isAuthLoading) return <div className="loading-screen">Loading World...</div>
   if (!session && !isGuest) return <Auth onGuestClick={() => setIsGuest(true)} />
   return <GameWorld session={session} isGuest={isGuest} />
@@ -97,7 +107,7 @@ function GameWorld({ session, isGuest }) {
   
   const lastFetchPos = useRef([9999, 9999, 9999])
   const FETCH_THRESHOLD = 20 
-  const VIEW_DISTANCE = 120 
+  const VIEW_DISTANCE = 80 
   
   const [isMoving, setIsMoving] = useState(false)
   const stopMovingTimer = useRef(null)
@@ -114,20 +124,8 @@ function GameWorld({ session, isGuest }) {
   const triggerFloatText = (text, position) => setFloatEvents(prev => [...prev, { text, pos: position }])
 
   const fetchNearbyBuildings = async (x, z) => {
-    const { data, error } = await supabase.rpc('get_nearby_buildings', { center_x: x, center_z: z, radius: VIEW_DISTANCE })
+    const { data } = await supabase.rpc('get_nearby_buildings', { center_x: x, center_z: z, radius: VIEW_DISTANCE })
     if (data) setBuildings(data)
-  }
-
-  // --- 动作定义 (必须在 return 之前) ---
-
-  const checkCollision = (targetPos) => {
-    const [tx, ty, tz] = targetPos
-    if (Math.abs(tx) < 3.5 && Math.abs(tz) < 3.5) return true
-    for (let b of buildings) {
-      const dx = tx - b.x; const dz = tz - b.z
-      if (Math.sqrt(dx*dx + dz*dz) < 1.5) return true
-    }
-    return false
   }
 
   const moveCharacter = (direction) => {
@@ -180,6 +178,16 @@ function GameWorld({ session, isGuest }) {
     }
   }
 
+  const checkCollision = (targetPos) => {
+    const [tx, ty, tz] = targetPos
+    if (Math.abs(tx) < 3.5 && Math.abs(tz) < 3.5) return true
+    for (let b of buildings) {
+      const dx = tx - b.x; const dz = tz - b.z
+      if (Math.sqrt(dx*dx + dz*dz) < 1.5) return true
+    }
+    return false
+  }
+
   const handlePlayerClick = (playerData) => {
     if (playerData.userId === myId) return
     setSelectedPlayer(playerData)
@@ -211,8 +219,6 @@ function GameWorld({ session, isGuest }) {
       alert(`❌ 失败: ${data?.msg || error?.message}`)
     }
   }
-
-  // --- 初始化与网络 ---
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -266,6 +272,7 @@ function GameWorld({ session, isGuest }) {
       joinMultiplayerRoom(myId, spawnPos)
     }
     initGame()
+    
     return () => { 
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current)
@@ -375,7 +382,6 @@ function GameWorld({ session, isGuest }) {
     return () => { clearInterval(timer); clearInterval(saveTimer) }
   }, [isGuest, myId])
 
-  // --- 关键函数：操作逻辑 ---
   const handleBankTransaction = async (type, amount) => {
     if (isGuest) { alert("🔒 游客模式"); return }
     const { data, error } = await supabase.rpc('bank_transaction', { user_id: myId, amount, action_type: type })
@@ -437,7 +443,8 @@ function GameWorld({ session, isGuest }) {
       await supabase.from('profiles').update({ energy: 100 }).eq('id', myId)
       triggerFloatText("⚡精力满", posRef.current)
   }
-
+  
+  // --- 关键修复：goHome 函数定义 ---
   const goHome = async () => {
       const { data } = await supabase.from('buildings').select('x, z').eq('owner_id', myId).order('created_at', { ascending: true }).limit(1).single()
       let homePos = getRandomSpawn()
@@ -476,7 +483,6 @@ function GameWorld({ session, isGuest }) {
   const handlePurchase = async () => {
     if (checkGuest()) return
     if (!activeShop) return
-    
     if (activeShop.owner_id !== myId) {
       const PRICE = 50 
       if (cash < PRICE) { alert("❌ 钱不够"); return }
@@ -485,12 +491,11 @@ function GameWorld({ session, isGuest }) {
         setCash(prev => prev - PRICE); setEnergy(prev => Math.min(prev + 20, 100))
         triggerFloatText(`-$${PRICE}`, posRef.current)
         triggerFloatText("⚡+20", [posRef.current[0], posRef.current[1]+0.5, posRef.current[2]])
-        setActiveShop(null) // ✅ 交易后关闭
+        setActiveShop(null) // ✅ 成功后关闭弹窗
       } else { alert(`❌ 交易失败`) }
     } else {
       const currentLevel = activeShop.level || 1
       if (currentLevel >= MAX_LEVEL) { alert("🏆 已满级"); return }
-      
       const upgradeCost = 5000 * Math.pow(2, currentLevel - 1)
       const confirm = window.confirm(`🆙 升级店铺 (Lv.${currentLevel} -> Lv.${currentLevel+1})\n\n费用: $${upgradeCost.toLocaleString()}\n收益: +10%`)
       if (!confirm) return
@@ -501,13 +506,13 @@ function GameWorld({ session, isGuest }) {
       setCash(newCash); setIncome(newIncome)
       triggerFloatText(`-$${upgradeCost}`, posRef.current)
       triggerFloatText("UPGRADE!", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
+      
+      setActiveShop(null) // ✅ 成功后关闭弹窗
 
       await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
       await supabase.from('buildings').update({ level: currentLevel + 1 }).eq('id', activeShop.id)
       
       setBuildings(prev => prev.map(b => b.id === activeShop.id ? { ...b, level: currentLevel + 1 } : b))
-      setActiveShop(prev => ({ ...prev, level: currentLevel + 1 }))
-      setActiveShop(null) // ✅ 升级后关闭
     }
   }
 
@@ -551,7 +556,7 @@ function GameWorld({ session, isGuest }) {
           myPosition={myPosition} myColor={mySkin} myMessage={myMessage}
           otherPlayers={otherPlayers} buildings={buildings} currentGrid={currentGrid}
           floatEvents={floatEvents} lang={lang} 
-          onPlayerClick={handlePlayerClick}
+          onPlayerClick={handlePlayerClick} // ✅ 现在有定义了
         />
       </div>
 
@@ -628,11 +633,26 @@ function GameWorld({ session, isGuest }) {
            </div>
         )}
 
+        {/* 📱 手机端：虚拟摇杆 (CSS控制只在手机显示) */}
         <div className="d-pad">
            <div className="pad-btn pad-up" onTouchStart={(e)=>{e.preventDefault(); moveCharacter('up')}}>▲</div>
            <div className="pad-btn pad-down" onTouchStart={(e)=>{e.preventDefault(); moveCharacter('down')}}>▼</div>
            <div className="pad-btn pad-left" onTouchStart={(e)=>{e.preventDefault(); moveCharacter('left')}}>◀</div>
            <div className="pad-btn pad-right" onTouchStart={(e)=>{e.preventDefault(); moveCharacter('right')}}>▶</div>
+        </div>
+
+        {/* 🖥️ 电脑端：WASD 键盘提示 (CSS控制只在电脑显示) */}
+        <div className="desktop-hint">
+          <div className="key-row">
+            <div className="key-cap">W</div>
+          </div>
+          <div className="key-row">
+            <div className="key-cap">A</div>
+            <div className="key-cap">S</div>
+            <div className="key-cap">D</div>
+          </div>
+          <div className="hint-label">键盘移动</div>
+          <div className="hint-label" style={{marginTop:'2px'}}>Enter 聊天</div>
         </div>
 
         <div className="bottom-controls">

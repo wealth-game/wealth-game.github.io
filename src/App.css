@@ -1,68 +1,111 @@
 /* src/App.css */
 :root {
-  --glass-bg: rgba(255, 255, 255, 0.85); /* 稍微不透明一点，提升阅读性 */
+  --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(255, 255, 255, 0.5);
   --shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
   --primary-color: #2c3e50;
   --accent-color: #3498db;
 }
 
-body, html {
-  margin: 0; padding: 0; width: 100%; height: 100%;
-  overflow: hidden; user-select: none; -webkit-user-select: none;
-  touch-action: none;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #f1f2f6;
+/* 强制 App 容器全屏绝对定位 */
+.app-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: block;
 }
 
-.app-container { position: relative; width: 100vw; height: 100vh; }
-.scene-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+/* 3D 场景层：位于最底层 z-index: 0 */
+.scene-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
 
+/* UI 覆盖层：位于上层，点击穿透 */
 .ui-overlay {
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  pointer-events: none;
-  display: flex; flex-direction: column; justify-content: flex-end;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* 让触摸穿透到场景 */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end; /* 内容靠下 */
+  z-index: 10;
 }
 
 /* --- 顶部区域 --- */
 .top-info {
-  position: absolute; top: 10px; left: 10px; right: 10px;
-  display: flex; justify-content: space-between; pointer-events: auto; z-index: 20;
-}
-.gps-panel {
-  background: rgba(0,0,0,0.6); color: white; padding: 8px 12px;
-  border-radius: 8px; font-size: 12px; font-family: monospace; backdrop-filter: blur(4px);
-}
-.home-btn {
-  background: white; border: none; padding: 8px 15px;
-  border-radius: 20px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-  font-size: 12px; cursor: pointer;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: auto;
+  z-index: 20;
 }
 
-/* --- 📱 底部控制台 (重构版) --- */
+.gps-panel {
+  background: rgba(0,0,0,0.6);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: monospace;
+  backdrop-filter: blur(4px);
+}
+
+.home-btn {
+  background: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 20px;
+  font-weight: bold;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* --- 底部控制台 --- */
 .bottom-controls {
   pointer-events: auto;
   width: 100%;
-  max-width: 600px; /* 限制最大宽度，电脑上不至于太长 */
-  margin: 0 auto;   /* 居中 */
-  padding: 0;       /* 移除内边距，紧贴底部或悬浮 */
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding-bottom: 20px; /* 适配 iPhone 底部 */
 }
 
-/* 1. 金钱面板 (悬浮在控制台上方) */
+/* 1. 金钱面板 */
 .stats-card {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 20px; margin: 0 15px;
-  background: var(--glass-bg); backdrop-filter: blur(12px);
-  border-radius: 16px; border: 1px solid var(--glass-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  margin: 0 15px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid var(--glass-border);
   box-shadow: var(--shadow);
-  font-weight: bold; color: var(--primary-color); font-size: 14px;
+  font-weight: bold;
+  color: var(--primary-color);
+  font-size: 14px;
 }
 
-/* 2. 控制台容器 */
+/* 2. 控制台容器 (Tab + 按钮) */
 .control-panel {
   background: white;
   margin: 0 15px;
@@ -72,7 +115,7 @@ body, html {
   border: 1px solid rgba(0,0,0,0.05);
 }
 
-/* 3. 选项卡 (Tabs) */
+/* 3. 选项卡 */
 .tabs {
   display: flex;
   background: #f8f9fa;
@@ -94,27 +137,25 @@ body, html {
   color: var(--primary-color);
   background: white;
 }
-/* 选中时的底部蓝条 */
 .tab-btn.active::after {
   content: ''; position: absolute; bottom: 0; left: 20%; width: 60%; height: 3px;
   background: var(--accent-color); border-radius: 3px 3px 0 0;
 }
 
-/* 4. 按钮操作区 */
+/* 4. 按钮区域 */
 .actions-area {
   padding: 15px;
   display: flex;
   gap: 10px;
-  overflow-x: auto; /* 允许横向滚动 */
+  overflow-x: auto;
   scrollbar-width: none;
-  /* 使得按钮排列更紧凑 */
   flex-wrap: wrap; 
   justify-content: flex-start; 
 }
 .actions-area::-webkit-scrollbar { display: none; }
 
 .action-btn {
-  flex: 1 1 30%; /* 手机上一行大约3个 */
+  flex: 1 1 30%; /* 手机上一行3个 */
   min-width: 90px;
   padding: 12px 5px;
   border-radius: 12px;
@@ -132,10 +173,10 @@ body, html {
 .action-btn:active { transform: scale(0.96); }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
 
-/* --- 虚拟摇杆 (D-Pad) --- */
+/* --- 📱 虚拟摇杆 (手机) --- */
 .d-pad {
   position: absolute;
-  bottom: 220px; /* 抬高，避开新的大面板 */
+  bottom: 220px; /* 抬高避开面板 */
   left: 20px;
   width: 120px; height: 120px;
   pointer-events: auto; z-index: 20;
@@ -152,13 +193,37 @@ body, html {
 .pad-up { top: 0; left: 40px; } .pad-down { bottom: 0; left: 40px; }
 .pad-left { top: 40px; left: 0; } .pad-right { top: 40px; right: 0; }
 
-/* 加载界面 */
-.loading-screen { height: 100vh; display: flex; justify-content: center; align-items: center; background: #2f3542; color: white; font-size: 18px; letter-spacing: 2px; }
+/* --- 🖥️ 键盘提示 (电脑) --- */
+.desktop-hint { display: none; }
 
-/* --- 🖥️ 电脑端适配 --- */
+/* 加载页 */
+.loading-screen {
+  height: 100vh; display: flex; justify-content: center; align-items: center;
+  background: #2f3542; color: white; font-size: 18px; letter-spacing: 2px;
+}
+
+/* --- 🖥️ 电脑大屏适配 --- */
 @media (min-width: 768px) {
-  .d-pad { display: none; }
+  .d-pad { display: none; } /* 隐藏摇杆 */
+  
+  .desktop-hint {
+    display: flex; flex-direction: column; align-items: center;
+    position: absolute; bottom: 40px; left: 40px; /* 左下角 */
+    gap: 5px; pointer-events: none; opacity: 0.8; z-index: 5;
+  }
+  .key-row { display: flex; gap: 5px; }
+  .key-cap {
+    width: 40px; height: 40px; background: white; border: 1px solid #ccc;
+    border-bottom: 4px solid #bbb; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold; color: #333; font-family: monospace; font-size: 18px;
+  }
+  .hint-label {
+    margin-top: 8px; font-size: 12px; color: #666;
+    background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 4px;
+  }
+
   .bottom-controls { padding-bottom: 20px; }
-  .action-btn { flex: 0 0 auto; width: auto; padding: 12px 20px; } /* 电脑上按钮不拉伸 */
-  .actions-area { justify-content: center; } /* 居中显示 */
+  .action-btn { flex: 0 0 auto; width: auto; padding: 12px 20px; }
+  .actions-area { justify-content: center; }
 }
