@@ -4,11 +4,12 @@ import { Canvas } from '@react-three/fiber'
 import { 
   OrbitControls, 
   PerspectiveCamera, 
-  Environment, 
+  // Environment,  <-- 删除这个引用，它会导致下载超时
   ContactShadows, 
   Html 
 } from '@react-three/drei'
 
+// 引入资源
 import { Player } from './models/Player'
 import { Shop } from './models/Shop'
 import { Tree } from './models/Tree'
@@ -23,23 +24,26 @@ import {
   TechOffice, Skyscraper, RocketBase 
 } from './models/Buildings'
 
+// 1. 环境设置 (离线版 - 纯代码光照)
 function EnvironmentSet() {
   return (
     <>
-      <Environment preset="city" />
-      <ambientLight intensity={0.8} />
+      {/* ❌ 删除 Environment preset="city"，它会导致国内白屏 */}
+      
+      {/* ✅ 替代方案：手动设置背景色和灯光 */}
+      <color attach="background" args={['#dff9fb']} /> {/* 天空蓝背景 */}
+      
+      <ambientLight intensity={1.0} /> {/* 调高环境光，弥补失去HDR的亮度 */}
+      
       <directionalLight 
-        position={[10, 20, 10]} 
+        position={[50, 50, 25]} 
         intensity={1.5} 
         castShadow 
         shadow-mapSize={[1024, 1024]} 
       />
-      {/* 
-         迷雾调整：
-         地图变大了，迷雾也要推远一点，不然可视距离太短。
-         30米 -> 50米渐变，80米 -> 120米完全遮挡
-      */}
-      <fog attach="fog" args={['#dff9fb', 50, 120]} />
+      
+      {/* 迷雾 */}
+      <fog attach="fog" args={['#dff9fb', 30, 90]} />
     </>
   )
 }
@@ -48,19 +52,12 @@ function Ground() {
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
-        {/* 
-           🌍 地图扩容：
-           从 500 改为 2000。
-           这相当于 4平方公里，足够盖几千栋楼了。
-        */}
         <planeGeometry args={[2000, 2000]} />
         <meshStandardMaterial color="#c7ecee" roughness={0.8} />
       </mesh>
-      
-      {/* 网格线相应扩大 */}
       <GridMap size={2000} divisions={1000} />
-      
-      <ContactShadows resolution={1024} scale={50} blur={2} opacity={0.4} far={1} color="#000000" />
+      {/* ContactShadows 可能会耗费性能，如果手机卡可以注释掉下面这行 */}
+      <ContactShadows resolution={512} scale={50} blur={2} opacity={0.4} far={1} color="#000000" />
     </>
   )
 }
@@ -86,12 +83,10 @@ export default function GameScene({
   onPlayerClick
 }) {
   
-  // 树木数量增加，分布范围扩大
   const trees = useMemo(() => {
     const temp = []
-    for(let i=0; i<200; i++) { // 增加到 200 棵树
+    for(let i=0; i<200; i++) {
       const angle = Math.random() * Math.PI * 2
-      // 分布在半径 20米 到 200米 之间
       const radius = 20 + Math.random() * 180 
       temp.push({
         x: Math.sin(angle) * radius,
@@ -117,10 +112,10 @@ export default function GameScene({
 
   return (
     <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: 'linear-gradient(to bottom, #dff9fb, #ffffff)' }}>
+      {/* 保持 basic 阴影以提高兼容性 */}
       <Canvas shadows="basic" dpr={[1, 1.5]}>
         
-        {/* 摄像机稍微拉远一点，看更广 */}
-        <PerspectiveCamera makeDefault position={[0, 15, 20]} fov={45} />
+        <PerspectiveCamera makeDefault position={[0, 12, 16]} fov={45} />
         <OrbitControls enableZoom={true} minDistance={5} maxDistance={60} target={safeMyPos} />
 
         <Suspense fallback={<Html center>Loading...</Html>}>
