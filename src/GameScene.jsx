@@ -1,7 +1,13 @@
 /* src/GameScene.jsx */
 import React, { Suspense, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, PerspectiveCamera, Environment, ContactShadows, Html } from '@react-three/drei'
+import { 
+  OrbitControls, 
+  PerspectiveCamera, 
+  Environment, 
+  ContactShadows, 
+  Html 
+} from '@react-three/drei'
 
 import { Player } from './models/Player'
 import { Shop } from './models/Shop'
@@ -12,15 +18,28 @@ import { NPCSystem } from './models/NPCs'
 import { SpeechBubble } from './models/SpeechBubble'
 import { FloatingTextManager } from './models/FloatingText'
 
-import { ConvenienceStore, CoffeeShop, GasStation, TechOffice, Skyscraper, RocketBase } from './models/Buildings'
+import { 
+  ConvenienceStore, CoffeeShop, GasStation, 
+  TechOffice, Skyscraper, RocketBase 
+} from './models/Buildings'
 
 function EnvironmentSet() {
   return (
     <>
       <Environment preset="city" />
       <ambientLight intensity={0.8} />
-      <directionalLight position={[10, 20, 10]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} />
-      <fog attach="fog" args={['#dff9fb', 30, 70]} />
+      <directionalLight 
+        position={[10, 20, 10]} 
+        intensity={1.5} 
+        castShadow 
+        shadow-mapSize={[1024, 1024]} 
+      />
+      {/* 
+         迷雾调整：
+         地图变大了，迷雾也要推远一点，不然可视距离太短。
+         30米 -> 50米渐变，80米 -> 120米完全遮挡
+      */}
+      <fog attach="fog" args={['#dff9fb', 50, 120]} />
     </>
   )
 }
@@ -29,21 +48,27 @@ function Ground() {
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
-        <planeGeometry args={[500, 500]} />
+        {/* 
+           🌍 地图扩容：
+           从 500 改为 2000。
+           这相当于 4平方公里，足够盖几千栋楼了。
+        */}
+        <planeGeometry args={[2000, 2000]} />
         <meshStandardMaterial color="#c7ecee" roughness={0.8} />
       </mesh>
-      <GridMap size={500} divisions={250} />
+      
+      {/* 网格线相应扩大 */}
+      <GridMap size={2000} divisions={1000} />
+      
       <ContactShadows resolution={1024} scale={50} blur={2} opacity={0.4} far={1} color="#000000" />
     </>
   )
 }
 
-// 增加 onClick 参数
 function OtherPlayer({ position, isWorking, color, name, message, onClick }) {
   if (!position || position.length < 3 || isNaN(position[0]) || isNaN(position[2])) return null
   return (
-    // 绑定点击事件到 group
-    <group position={position} onClick={(e) => { e.stopPropagation(); onClick() }} cursor="pointer">
+    <group position={position} onClick={(e) => { e.stopPropagation(); onClick() }}>
       <Player isWorking={isWorking} skin={color} />
       <SpeechBubble text={message} />
       <Html position={[0, 2.2, 0]} center distanceFactor={10}>
@@ -58,15 +83,21 @@ function OtherPlayer({ position, isWorking, color, name, message, onClick }) {
 export default function GameScene({ 
   isWorking, hasShop, myPosition, myColor, myMessage, 
   otherPlayers, buildings, currentGrid, floatEvents, lang = 'zh',
-  onPlayerClick // <--- 新增：接收父组件传来的点击函数
+  onPlayerClick
 }) {
   
+  // 树木数量增加，分布范围扩大
   const trees = useMemo(() => {
     const temp = []
-    for(let i=0; i<80; i++) {
+    for(let i=0; i<200; i++) { // 增加到 200 棵树
       const angle = Math.random() * Math.PI * 2
-      const radius = 15 + Math.random() * 45
-      temp.push({ x: Math.sin(angle) * radius, z: Math.cos(angle) * radius, type: Math.random() > 0.5 ? 'pine' : 'round' })
+      // 分布在半径 20米 到 200米 之间
+      const radius = 20 + Math.random() * 180 
+      temp.push({
+        x: Math.sin(angle) * radius,
+        z: Math.cos(angle) * radius,
+        type: Math.random() > 0.5 ? 'pine' : 'round'
+      })
     }
     return temp
   }, [])
@@ -87,8 +118,10 @@ export default function GameScene({
   return (
     <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: 'linear-gradient(to bottom, #dff9fb, #ffffff)' }}>
       <Canvas shadows="basic" dpr={[1, 1.5]}>
-        <PerspectiveCamera makeDefault position={[0, 12, 16]} fov={45} />
-        <OrbitControls enableZoom={true} minDistance={5} maxDistance={40} target={safeMyPos} />
+        
+        {/* 摄像机稍微拉远一点，看更广 */}
+        <PerspectiveCamera makeDefault position={[0, 15, 20]} fov={45} />
+        <OrbitControls enableZoom={true} minDistance={5} maxDistance={60} target={safeMyPos} />
 
         <Suspense fallback={<Html center>Loading...</Html>}>
           <EnvironmentSet />
@@ -125,7 +158,6 @@ export default function GameScene({
              {hasShop && <group position={[1.5, 0, 0]}><Shop /><Html position={[0, 3, 0]} center distanceFactor={10}><div style={{color:'#f39c12', fontSize:'10px', fontWeight:'bold', whiteSpace: 'nowrap'}}>MY SHOP</div></Html></group>}
           </group>
 
-          {/* 渲染其他玩家，绑定点击事件 */}
           {otherPlayers && Object.keys(otherPlayers).map(key => {
             const p = otherPlayers[key]
             if (!p.position) return null
@@ -137,7 +169,6 @@ export default function GameScene({
                 isWorking={p.isWorking} 
                 name={p.name} 
                 message={p.message}
-                // 绑定点击：把玩家数据传回去
                 onClick={() => onPlayerClick(p)} 
               />
             )

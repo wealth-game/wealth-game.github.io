@@ -12,6 +12,8 @@ import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
 const MAX_LEVEL = 6 
+// 🚫 世界边界：扩大到 1000 米
+const WORLD_LIMIT = 1000 
 
 const getRandomSpawn = () => {
   const angle = Math.random() * Math.PI * 2
@@ -32,12 +34,32 @@ function App() {
   const [session, setSession] = useState(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [isGuest, setIsGuest] = useState(false)
+  const [networkError, setNetworkError] = useState(false) // 新增：网络错误状态
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setIsAuthLoading(false)
+    // 设置一个 10秒 超时检测
+    const timeout = setTimeout(() => {
+      if (isAuthLoading) {
+        setNetworkError(true)
+        setIsAuthLoading(false)
+      }
+    }, 10000)
+
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      clearTimeout(timeout)
+      if (error) {
+        console.error("Auth Error:", error)
+        setNetworkError(true)
+      } else {
+        setSession(session)
+        setIsAuthLoading(false)
+      }
+    }).catch(err => {
+      clearTimeout(timeout)
+      console.error("Network Error:", err)
+      setNetworkError(true)
     })
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       if (_event === 'SIGNED_OUT') {
@@ -48,7 +70,28 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  if (isAuthLoading) return <div className="loading-screen">Loading World...</div>
+  // --- 错误提示界面 ---
+  if (networkError) {
+    return (
+      <div className="loading-screen" style={{flexDirection:'column', gap:'20px', textAlign:'center', padding:'20px'}}>
+        <div style={{fontSize:'40px'}}>📡</div>
+        <h2>无法连接到服务器</h2>
+        <p style={{fontSize:'14px', color:'#aaa', maxWidth:'300px'}}>
+          检测到网络连接超时或被阻断。<br/>
+          由于游戏服务器位于海外，中国大陆用户可能需要使用加速工具。
+        </p>
+        <button 
+          onClick={() => window.location.reload()} 
+          style={{padding:'10px 20px', background:'#3498db', color:'white', border:'none', borderRadius:'8px', fontSize:'16px', cursor:'pointer'}}
+        >
+          重试连接
+        </button>
+      </div>
+    )
+  }
+
+  if (isAuthLoading) return <div className="loading-screen">🚀 正在连接元宇宙...</div>
+
   if (!session && !isGuest) return <Auth onGuestClick={() => setIsGuest(true)} />
   return <GameWorld session={session} isGuest={isGuest} />
 }
@@ -58,7 +101,6 @@ function GameWorld({ session, isGuest }) {
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
-  
   const [showProfile, setShowProfile] = useState(false)
   const [showBank, setShowBank] = useState(false)
   const [showStock, setShowStock] = useState(false)
@@ -93,7 +135,8 @@ function GameWorld({ session, isGuest }) {
   
   const lastFetchPos = useRef([9999, 9999, 9999])
   const FETCH_THRESHOLD = 20 
-  const VIEW_DISTANCE = 80 
+  // 视野加大到 120米
+  const VIEW_DISTANCE = 120 
   
   const [isMoving, setIsMoving] = useState(false)
   const stopMovingTimer = useRef(null)
@@ -110,7 +153,12 @@ function GameWorld({ session, isGuest }) {
   const triggerFloatText = (text, position) => setFloatEvents(prev => [...prev, { text, pos: position }])
 
   const fetchNearbyBuildings = async (x, z) => {
-    const { data } = await supabase.rpc('get_nearby_buildings', { center_x: x, center_z: z, radius: VIEW_DISTANCE })
+    // 增加错误处理
+    const { data, error } = await supabase.rpc('get_nearby_buildings', { center_x: x, center_z: z, radius: VIEW_DISTANCE })
+    if (error) {
+       console.error("加载地图失败:", error)
+       return
+    }
     if (data) setBuildings(data)
   }
 
@@ -129,6 +177,12 @@ function GameWorld({ session, isGuest }) {
       case 'left': newPos = [x - speed, y, z]; break;
       case 'right': newPos = [x + speed, y, z]; break;
       default: return;
+    }
+
+    // 🛡️ 边界限制 (1000米)
+    if (Math.abs(newPos[0]) > WORLD_LIMIT || Math.abs(newPos[2]) > WORLD_LIMIT) {
+       if(Math.random() > 0.95) triggerFloatText("🚧 世界尽头", newPos)
+       return
     }
 
     if (checkCollision(newPos)) {
@@ -169,33 +223,25 @@ function GameWorld({ session, isGuest }) {
     return false
   }
 
-  // --- 🔴 关键修复：补回 handlePlayerClick 函数 ---
+  // --- 处理点击其他玩家 ---
   const handlePlayerClick = (playerData) => {
     if (playerData.userId === myId) return
     setSelectedPlayer(playerData)
   }
 
-  // --- 补回 handleTransfer 函数 ---
   const handleTransfer = async (targetUserId, amount) => {
     if (isGuest) { alert("🔒 游客无法转账"); return }
     if (cash < amount) { alert("❌ 余额不足"); return }
-    
-    // 扣税 10%
     const tax = Math.ceil(amount * 0.1)
     const totalCost = amount + tax
     
-    if (!window.confirm(`💸 转账提醒\n\n转给对方: $${amount}\n银行手续费(10%): $${tax}\n总共扣除: $${totalCost}\n\n确定转账吗？`)) {
-      return
-    }
-
+    if (!window.confirm(`💸 转账提醒\n\n转给对方: $${amount}\n银行手续费(10%): $${tax}\n总共扣除: $${totalCost}\n\n确定转账吗？`)) return
     if (cash < totalCost) { alert("❌ 余额不足以支付手续费"); return }
 
-    const { data, error } = await supabase.rpc('transfer_cash', {
-      sender_id: myId, receiver_id: targetUserId, amount: amount
-    })
+    const { data, error } = await supabase.rpc('transfer_cash', { sender_id: myId, receiver_id: targetUserId, amount: amount })
 
     if (data && data.status === 'success') {
-      setCash(prev => prev - totalCost) // 扣除含税总额
+      setCash(prev => prev - totalCost) 
       triggerFloatText(`-$${totalCost}`, posRef.current)
       setSelectedPlayer(null) 
       if (channelRef.current) {
@@ -212,10 +258,7 @@ function GameWorld({ session, isGuest }) {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (showChat) {
-        if (e.key === 'Enter') handleSendChat()
-        return 
-      }
+      if (showChat) { if (e.key === 'Enter') handleSendChat(); return }
       if (e.key === 'Enter') { setShowChat(true); return }
       if (e.key === 'w' || e.key === 'ArrowUp') moveCharacter('up')
       if (e.key === 's' || e.key === 'ArrowDown') moveCharacter('down')
@@ -230,30 +273,33 @@ function GameWorld({ session, isGuest }) {
     async function initGame() {
       let spawnPos = getRandomSpawn()
       if (!isGuest) {
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', myId).single()
-        if (profile) {
-          const { data: home } = await supabase.from('buildings').select('x, z').eq('owner_id', myId).order('created_at', { ascending: true }).limit(1).single()
-          if (home) {
-            spawnPos = getSafeSpawnAround(home.x, home.z)
-            console.log("🏠 欢迎回家")
-          }
-          
-          let offlineCash = 0
-          if (profile.last_active_at && profile.passive_income > 0) {
-            const secondsPassed = (Date.now() - new Date(profile.last_active_at).getTime()) / 1000
-            if (secondsPassed > 60) offlineCash = Math.floor(Math.min(secondsPassed, 86400) * profile.passive_income)
-          }
-          if (offlineCash > 0) alert(`💰 欢迎回来！\n\n离线收益: $${offlineCash.toLocaleString()}`)
+        try {
+          const { data: profile } = await supabase.from('profiles').select('*').eq('id', myId).single()
+          if (profile) {
+            const { data: home } = await supabase.from('buildings').select('x, z').eq('owner_id', myId).order('created_at', { ascending: true }).limit(1).single()
+            if (home) {
+              spawnPos = getSafeSpawnAround(home.x, home.z)
+              console.log("🏠 欢迎回家")
+            }
+            let offlineCash = 0
+            if (profile.last_active_at && profile.passive_income > 0) {
+              const secondsPassed = (Date.now() - new Date(profile.last_active_at).getTime()) / 1000
+              if (secondsPassed > 60) offlineCash = Math.floor(Math.min(secondsPassed, 86400) * profile.passive_income)
+            }
+            if (offlineCash > 0) alert(`💰 欢迎回来！\n\n离线收益: $${offlineCash.toLocaleString()}`)
 
-          setCash(profile.cash + offlineCash)
-          setEnergy(profile.energy)
-          setIncome(profile.passive_income || 0)
-          setDeposit(profile.deposit || 0)
-          setLoan(profile.loan || 0)
-          if (profile.nickname) setMyName(profile.nickname)
-          if (profile.avatar) setMySkin(profile.avatar)
-          
-          await supabase.from('profiles').update({ cash: profile.cash + offlineCash, last_active_at: new Date().toISOString() }).eq('id', myId)
+            setCash(profile.cash + offlineCash)
+            setEnergy(profile.energy)
+            setIncome(profile.passive_income || 0)
+            setDeposit(profile.deposit || 0)
+            setLoan(profile.loan || 0)
+            if (profile.nickname) setMyName(profile.nickname)
+            if (profile.avatar) setMySkin(profile.avatar)
+            
+            await supabase.from('profiles').update({ cash: profile.cash + offlineCash, last_active_at: new Date().toISOString() }).eq('id', myId)
+          }
+        } catch(e) {
+          console.error("Init Error", e)
         }
       } else {
         setCash(0); setEnergy(100); setIncome(0); setMyName(`游客${myId.substr(myId.length-4)}`)
@@ -264,13 +310,7 @@ function GameWorld({ session, isGuest }) {
       joinMultiplayerRoom(myId, spawnPos)
     }
     initGame()
-    
-    return () => { 
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current)
-        channelRef.current = null
-      }
-    }
+    return () => { if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null } }
   }, [isGuest, myId]) 
 
   useEffect(() => {
@@ -400,7 +440,7 @@ function GameWorld({ session, isGuest }) {
     alert(`✅ 形象已更新`)
   }
 
-  const checkGuest = () => { if (isGuest) { alert("🔒 请注册账号"); return true } return false }
+  const checkGuest = () => { if (isGuest) { alert("🔒 游客模式\n\n请注册账号！"); return true } return false }
   
   const work = async () => {
     if (checkGuest()) return
@@ -483,7 +523,7 @@ function GameWorld({ session, isGuest }) {
         setCash(prev => prev - PRICE); setEnergy(prev => Math.min(prev + 20, 100))
         triggerFloatText(`-$${PRICE}`, posRef.current)
         triggerFloatText("⚡+20", [posRef.current[0], posRef.current[1]+0.5, posRef.current[2]])
-        setActiveShop(null) // 关闭弹窗
+        setActiveShop(null) // 交易成功关闭弹窗
       } else { alert(`❌ 交易失败`) }
     } else {
       const currentLevel = activeShop.level || 1
@@ -499,12 +539,13 @@ function GameWorld({ session, isGuest }) {
       setCash(newCash); setIncome(newIncome)
       triggerFloatText(`-$${upgradeCost}`, posRef.current)
       triggerFloatText("UPGRADE!", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
-      setActiveShop(null) // 关闭弹窗
 
       await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
       await supabase.from('buildings').update({ level: currentLevel + 1 }).eq('id', activeShop.id)
       
       setBuildings(prev => prev.map(b => b.id === activeShop.id ? { ...b, level: currentLevel + 1 } : b))
+      setActiveShop(prev => ({ ...prev, level: currentLevel + 1 }))
+      setActiveShop(null)
     }
   }
 
@@ -548,7 +589,7 @@ function GameWorld({ session, isGuest }) {
           myPosition={myPosition} myColor={mySkin} myMessage={myMessage}
           otherPlayers={otherPlayers} buildings={buildings} currentGrid={currentGrid}
           floatEvents={floatEvents} lang={lang} 
-          onPlayerClick={handlePlayerClick} // ✅ 已修复
+          onPlayerClick={handlePlayerClick}
         />
       </div>
 
@@ -591,6 +632,7 @@ function GameWorld({ session, isGuest }) {
           <button onClick={() => setShowChat(true)} style={{position:'absolute', right:'20px', bottom:'180px', width:'50px', height:'50px', borderRadius:'50%', background:'white', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.2)', fontSize:'24px', cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'}}>💬</button>
         )}
 
+        {/* 交互弹窗 */}
         {activeShop && (
            <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto', zIndex: 9999}}>
               <div style={{background: 'white', padding: '15px 25px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'}}>
@@ -651,7 +693,7 @@ function GameWorld({ session, isGuest }) {
               {activeTab === 'life' && (
                 <>
                   <ActionBtn title="🔨 搬砖" onClick={work} color="#ff4757" />
-                  <ActionBtn title="🌭 流动摊 (200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
+                  <ActionBtn title="🌭 流动摊 ($200)" onClick={buyShop} color="#ffa502" disabled={income>0} />
                   <ActionBtn 
                     title={cooldown > 0 ? `💤 冷却 (${cooldown}s)` : "💤 睡觉"} 
                     onClick={sleep} 
@@ -667,8 +709,8 @@ function GameWorld({ session, isGuest }) {
                   <ActionBtn title="☕ 咖啡馆 (5w)" onClick={() => buildBuilding('coffee', 50000, 100, '咖啡馆')} color="#00704a" />
                   <ActionBtn title="⛽ 加油站 (50w)" onClick={() => buildBuilding('gas', 500000, 500, '加油站')} color="#e74c3c" />
                   <ActionBtn title="🏢 科技园 (1kw)" onClick={() => buildBuilding('office', 10000000, 5000, '科技园')} color="#3498db" />
-                  <ActionBtn title="🌆 摩天楼 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
-                  <ActionBtn title="🚀 发射场 (1千亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
+                  <ActionBtn title="🌆 摩天大楼 (5亿)" onClick={() => buildBuilding('tower', 500000000, 100000, '摩天大楼')} color="#2c3e50" />
+                  <ActionBtn title="🚀 火箭基地 (1千亿)" onClick={() => buildBuilding('rocket', 100000000000, 10000000, '发射基地')} color="#c0392b" />
                 </>
               )}
 
