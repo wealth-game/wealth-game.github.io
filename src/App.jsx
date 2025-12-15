@@ -20,13 +20,24 @@ const getRandomSpawn = () => {
   const radius = 6 + Math.random() * 4
   return [Math.sin(angle) * radius, 0, Math.cos(angle) * radius]
 }
+
+// 安全出生点 (偏移)
 const getSafeSpawnAround = (x, z) => {
   const angle = Math.random() * Math.PI * 2
   const distance = 3.5 
   return [x + Math.sin(angle) * distance, 0, z + Math.cos(angle) * distance]
 }
+
+// 翻译函数
 const getBuildingName = (type) => {
-  const map = { store: '便利店', coffee: '咖啡馆', gas: '加油站', office: '科技园', tower: '摩天大楼', rocket: '火箭基地' }
+  const map = { 
+    store: '便利店', 
+    coffee: '咖啡馆', 
+    gas: '加油站', 
+    office: '科技园', 
+    tower: '摩天大楼', 
+    rocket: '火箭基地' 
+  }
   return map[type] || '建筑'
 }
 
@@ -65,16 +76,22 @@ function App() {
   )
 
   if (isAuthLoading) return <div className="loading-screen">Loading World...</div>
-  if (!session && !isGuest) return <Auth onGuestClick={() => setIsGuest(true)} />
+
+  if (!session && !isGuest) {
+    return <Auth onGuestClick={() => setIsGuest(true)} />
+  }
+
   return <GameWorld session={session} isGuest={isGuest} />
 }
 
 function GameWorld({ session, isGuest }) {
+  // --- 身份 ---
   const [myId] = useState(session ? session.user.id : `guest-${Math.random().toString(36).substr(2, 5)}`)
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
   
+  // --- 界面状态 ---
   const [showProfile, setShowProfile] = useState(false)
   const [showBank, setShowBank] = useState(false)
   const [showStock, setShowStock] = useState(false)
@@ -82,6 +99,7 @@ function GameWorld({ session, isGuest }) {
   const [activeTab, setActiveTab] = useState('life')
   const [lang, setLang] = useState('zh') 
 
+  // --- 数值 ---
   const [cash, setCash] = useState(0)
   const [energy, setEnergy] = useState(0)
   const [income, setIncome] = useState(0)
@@ -93,8 +111,12 @@ function GameWorld({ session, isGuest }) {
   const [nextSleepTime, setNextSleepTime] = useState(0) 
   const [tick, setTick] = useState(0) 
 
+  // --- 地图 ---
   const [myPosition, setMyPosition] = useState([0, 0, 0])
   const posRef = useRef([0, 0, 0])
+  const [myRotation, setMyRotation] = useState(0)
+  const rotRef = useRef(0)
+
   const [otherPlayers, setOtherPlayers] = useState({}) 
   const [buildings, setBuildings] = useState([]) 
   const [currentGrid, setCurrentGrid] = useState({x: 0, z: 0}) 
@@ -118,6 +140,7 @@ function GameWorld({ session, isGuest }) {
   const lastSentPosRef = useRef(null) 
 
   useEffect(() => { posRef.current = myPosition }, [])
+  useEffect(() => { rotRef.current = myRotation }, [myRotation])
   useEffect(() => { incomeRef.current = income }, [income])
   useEffect(() => { cashRef.current = cash }, [cash])
 
@@ -128,6 +151,7 @@ function GameWorld({ session, isGuest }) {
     if (data) setBuildings(data)
   }
 
+  // === 🟢 核心修复：移动逻辑 ===
   const moveCharacter = (direction) => {
     setIsMoving(true)
     if (stopMovingTimer.current) clearTimeout(stopMovingTimer.current)
@@ -136,12 +160,29 @@ function GameWorld({ session, isGuest }) {
     const speed = 0.8 
     const [x, y, z] = posRef.current
     let newPos = [...posRef.current]
+    
+    // 初始化角度
+    let newRot = rotRef.current 
 
     switch(direction) {
-      case 'up': newPos = [x, y, z - speed]; break;
-      case 'down': newPos = [x, y, z + speed]; break;
-      case 'left': newPos = [x - speed, y, z]; break;
-      case 'right': newPos = [x + speed, y, z]; break;
+      case 'up': 
+        newPos = [x, y, z - speed]; 
+        newRot = Math.PI; // 背对屏幕
+        break;
+      case 'down': 
+        newPos = [x, y, z + speed]; 
+        newRot = 0; // 面向屏幕
+        break;
+      case 'left': 
+        newPos = [x - speed, y, z]; 
+        // 🟢 修正：按左键，面向左侧 (负90度)
+        newRot = -Math.PI / 2; 
+        break;
+      case 'right': 
+        newPos = [x + speed, y, z]; 
+        // 🟢 修正：按右键，面向右侧 (正90度)
+        newRot = Math.PI / 2; 
+        break;
       default: return;
     }
 
@@ -155,8 +196,8 @@ function GameWorld({ session, isGuest }) {
       return 
     }
 
-    setMyPosition(newPos)
-    posRef.current = newPos
+    setMyPosition(newPos); posRef.current = newPos
+    setMyRotation(newRot); rotRef.current = newRot
 
     const gridX = Math.floor(newPos[0] / 2) * 2 + 1
     const gridZ = Math.floor(newPos[2] / 2) * 2 + 1
@@ -198,7 +239,6 @@ function GameWorld({ session, isGuest }) {
     if (cash < amount) { alert("❌ 余额不足"); return }
     const tax = Math.ceil(amount * 0.1)
     const totalCost = amount + tax
-    
     if (!window.confirm(`💸 转账提醒\n\n转给对方: $${amount}\n银行手续费(10%): $${tax}\n总共扣除: $${totalCost}\n\n确定转账吗？`)) return
     if (cash < totalCost) { alert("❌ 余额不足以支付手续费"); return }
 
@@ -259,7 +299,6 @@ function GameWorld({ session, isGuest }) {
             setLoan(profile.loan || 0)
             if (profile.nickname) setMyName(profile.nickname)
             if (profile.avatar) setMySkin(profile.avatar)
-            
             await supabase.from('profiles').update({ cash: profile.cash + offlineCash, last_active_at: new Date().toISOString() }).eq('id', myId)
           }
         } catch(e) { console.error(e) }
@@ -272,7 +311,6 @@ function GameWorld({ session, isGuest }) {
       joinMultiplayerRoom(myId, spawnPos)
     }
     initGame()
-    
     return () => { 
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current)
@@ -300,7 +338,7 @@ function GameWorld({ session, isGuest }) {
           for (let key in newState) {
             if (key !== mySessionId) {
                const user = newState[key][0]
-               if (user) next[key] = { ...user, message: next[key]?.message || null }
+               if (user) next[key] = { ...user, message: prev[key]?.message || null }
             }
           }
           return next
@@ -329,7 +367,7 @@ function GameWorld({ session, isGuest }) {
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true)
-          await channel.track({ sessionId: mySessionId, userId, position, skin: mySkin, name: myName, isWorking: false })
+          await channel.track({ sessionId: mySessionId, userId, position, skin: mySkin, name: myName, isWorking: false, rotation: 0 })
         }
       })
     channelRef.current = channel
@@ -347,6 +385,7 @@ function GameWorld({ session, isGuest }) {
     if (!isConnected || !channelRef.current) return
     const syncInterval = setInterval(() => {
       const currentPos = posRef.current
+      const currentRot = rotRef.current
       const lastPos = lastSentPosRef.current
       let shouldSend = true
       if (lastPos) {
@@ -356,7 +395,8 @@ function GameWorld({ session, isGuest }) {
       if (shouldSend) {
         channelRef.current.track({ 
           sessionId: mySessionId, userId: myId, position: currentPos, 
-          skin: mySkin, name: myName, isWorking: isWorking || isMoving
+          skin: mySkin, name: myName, isWorking: isWorking || isMoving,
+          rotation: currentRot
         })
         lastSentPosRef.current = currentPos
       }
@@ -373,7 +413,6 @@ function GameWorld({ session, isGuest }) {
       }
       setTick(t => t + 1)
     }, 1000)
-    
     const saveTimer = setInterval(async () => {
       if (!isGuest && incomeRef.current > 0) {
         await supabase.from('profiles').update({ cash: cashRef.current, last_active_at: new Date().toISOString() }).eq('id', myId)
@@ -385,25 +424,21 @@ function GameWorld({ session, isGuest }) {
   const handleBankTransaction = async (type, amount) => {
     if (isGuest) { alert("🔒 游客模式"); return }
     const { data, error } = await supabase.rpc('bank_transaction', { user_id: myId, amount, action_type: type })
-    if (data && data.status === 'success') {
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', myId).single()
-      if (profile) {
-        setCash(profile.cash); setDeposit(profile.deposit); setLoan(profile.loan)
-      }
+    if (data?.status === 'success') {
+      const { data: p } = await supabase.from('profiles').select('*').eq('id', myId).single()
+      if (p) { setCash(p.cash); setDeposit(p.deposit); setLoan(p.loan) }
       alert(`✅ ${data.msg}`)
-    } else {
-      alert(`❌ 失败: ${data ? data.msg : error?.message}`)
-    }
+    } else { alert(`❌ 失败: ${data ? data.msg : error?.message}`) }
   }
 
   const handleSaveProfile = async (newName, newSkin) => {
     if (isGuest) { alert("🔒 游客模式无法保存"); return }
     if (!newName || newName.trim() === "") { alert("❌ 名字不能为空"); return }
     const { error } = await supabase.from('profiles').update({ nickname: newName, avatar: newSkin }).eq('id', myId)
-    if (error && error.code === '23505') { alert(`❌ "${newName}" 已被占用`); return }
+    if (error?.code === '23505') { alert(`❌ "${newName}" 已被占用`); return }
     setMyName(newName); setMySkin(newSkin); setShowProfile(false)
     if (channelRef.current) {
-      channelRef.current.track({ sessionId: mySessionId, userId: myId, position: posRef.current, skin: newSkin, name: newName, isWorking: isWorking })
+      channelRef.current.track({ sessionId: mySessionId, userId: myId, position: posRef.current, skin: newSkin, name: newName, isWorking: isWorking||isMoving, rotation: rotRef.current })
     }
     alert(`✅ 形象已更新`)
   }
@@ -444,7 +479,6 @@ function GameWorld({ session, isGuest }) {
       triggerFloatText("⚡精力满", posRef.current)
   }
   
-  // --- 关键修复：goHome 函数定义 ---
   const goHome = async () => {
       const { data } = await supabase.from('buildings').select('x, z').eq('owner_id', myId).order('created_at', { ascending: true }).limit(1).single()
       let homePos = getRandomSpawn()
@@ -491,7 +525,7 @@ function GameWorld({ session, isGuest }) {
         setCash(prev => prev - PRICE); setEnergy(prev => Math.min(prev + 20, 100))
         triggerFloatText(`-$${PRICE}`, posRef.current)
         triggerFloatText("⚡+20", [posRef.current[0], posRef.current[1]+0.5, posRef.current[2]])
-        setActiveShop(null) // ✅ 成功后关闭弹窗
+        setActiveShop(null) 
       } else { alert(`❌ 交易失败`) }
     } else {
       const currentLevel = activeShop.level || 1
@@ -507,12 +541,13 @@ function GameWorld({ session, isGuest }) {
       triggerFloatText(`-$${upgradeCost}`, posRef.current)
       triggerFloatText("UPGRADE!", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
       
-      setActiveShop(null) // ✅ 成功后关闭弹窗
+      setActiveShop(null) 
 
       await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
       await supabase.from('buildings').update({ level: currentLevel + 1 }).eq('id', activeShop.id)
       
       setBuildings(prev => prev.map(b => b.id === activeShop.id ? { ...b, level: currentLevel + 1 } : b))
+      setActiveShop(prev => ({ ...prev, level: currentLevel + 1 }))
     }
   }
 
@@ -553,10 +588,12 @@ function GameWorld({ session, isGuest }) {
         <GameScene 
           isWorking={isWorking || isMoving} 
           hasShop={income > 0} 
-          myPosition={myPosition} myColor={mySkin} myMessage={myMessage}
+          myPosition={myPosition} 
+          myRotation={myRotation} 
+          myColor={mySkin} myMessage={myMessage}
           otherPlayers={otherPlayers} buildings={buildings} currentGrid={currentGrid}
           floatEvents={floatEvents} lang={lang} 
-          onPlayerClick={handlePlayerClick} // ✅ 现在有定义了
+          onPlayerClick={handlePlayerClick}
         />
       </div>
 
@@ -633,7 +670,6 @@ function GameWorld({ session, isGuest }) {
            </div>
         )}
 
-        {/* 📱 手机端：虚拟摇杆 (CSS控制只在手机显示) */}
         <div className="d-pad">
            <div className="pad-btn pad-up" onTouchStart={(e)=>{e.preventDefault(); moveCharacter('up')}}>▲</div>
            <div className="pad-btn pad-down" onTouchStart={(e)=>{e.preventDefault(); moveCharacter('down')}}>▼</div>
@@ -641,18 +677,10 @@ function GameWorld({ session, isGuest }) {
            <div className="pad-btn pad-right" onTouchStart={(e)=>{e.preventDefault(); moveCharacter('right')}}>▶</div>
         </div>
 
-        {/* 🖥️ 电脑端：WASD 键盘提示 (CSS控制只在电脑显示) */}
         <div className="desktop-hint">
-          <div className="key-row">
-            <div className="key-cap">W</div>
-          </div>
-          <div className="key-row">
-            <div className="key-cap">A</div>
-            <div className="key-cap">S</div>
-            <div className="key-cap">D</div>
-          </div>
-          <div className="hint-label">键盘移动</div>
-          <div className="hint-label" style={{marginTop:'2px'}}>Enter 聊天</div>
+          <div className="key-row"><div className="key-cap">W</div></div>
+          <div className="key-row"><div className="key-cap">A</div><div className="key-cap">S</div><div className="key-cap">D</div></div>
+          <div className="hint-label">键盘移动 / Enter 聊天</div>
         </div>
 
         <div className="bottom-controls">

@@ -7,10 +7,12 @@ import {
   ContactShadows, 
   Html,
   Sky,
+  Environment,
+  Lightformer,
   BakeShadows
 } from '@react-three/drei'
+import * as THREE from 'three'
 
-// 引入资源
 import { Player } from './models/Player'
 import { Shop } from './models/Shop'
 import { Tree } from './models/Tree'
@@ -27,84 +29,59 @@ import {
 
 const WORLD_LIMIT = 1000
 
-// === 1. 环境设置 (纯离线版 - 绝不下载任何资源) ===
 function EnvironmentSet() {
   return (
     <>
-      {/* 1. 物理天空 (纯代码生成，不用联网) */}
-      <Sky 
-        distance={450000} 
-        sunPosition={[100, 20, 100]} 
-        inclination={0} 
-        azimuth={0.25} 
-      />
-
-      {/* 
-         2. 半球光 (关键：替代 Environment 补光)
-         调高强度，防止没有 HDR 贴图导致阴影面太黑
-      */}
-      <hemisphereLight 
-        skyColor="#87CEEB" 
-        groundColor="#f0f2f5" 
-        intensity={1.0} 
-      />
-
-      {/* 3. 环境光 (基础亮度) */}
-      <ambientLight intensity={0.5} />
-
-      {/* 4. 主阳光 (产生阴影) */}
+      <Sky distance={450000} sunPosition={[100, 40, 100]} inclination={0} azimuth={0.25} />
+      <Environment resolution={256}>
+        <group rotation={[-Math.PI / 3, 0, 1]}>
+          <Lightformer form="circle" intensity={4} rotation-x={Math.PI / 2} position={[0, 5, -9]} scale={2} />
+          <Lightformer form="circle" intensity={2} rotation-y={Math.PI / 2} position={[-5, 1, -1]} scale={2} />
+          <Lightformer form="ring" color="#fff" intensity={2} scale={10} position={[0, 10, 0]} />
+        </group>
+      </Environment>
+      <ambientLight intensity={1.5} /> 
+      <hemisphereLight skyColor="#87CEEB" groundColor="#ffffff" intensity={1.0} />
       <directionalLight 
-        position={[50, 80, 30]} 
-        intensity={1.5} 
-        castShadow 
+        position={[20, 50, 20]} intensity={2.0} castShadow 
         shadow-mapSize={[1024, 1024]} 
-        shadow-bias={-0.0001} 
       />
-
-      {/* 5. 迷雾 */}
-      <fog attach="fog" args={['#dff9fb', 30, 90]} />
-      
-      {/* 静态阴影优化 */}
-      <BakeShadows />
+      <fog attach="fog" args={['#dff9fb', 20, 80]} />
     </>
   )
 }
 
-// 2. 地面
 function Ground() {
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
         <planeGeometry args={[WORLD_LIMIT * 2, WORLD_LIMIT * 2]} />
-        <meshStandardMaterial color="#c7ecee" roughness={0.8} />
+        <meshStandardMaterial color="#b8e994" roughness={1} />
       </mesh>
       <GridMap size={2000} divisions={1000} />
-      <ContactShadows resolution={512} scale={50} blur={2} opacity={0.4} far={1} color="#000000" />
+      <ContactShadows resolution={512} scale={50} blur={2} opacity={0.2} far={2} color="#004400" />
     </>
   )
 }
 
-// 边界空气墙
-function WorldBorder() {
-  const wallConfig = { transparent: true, opacity: 0.05, color: '#ff4757', side: 2 }
+function PlayerMarker() {
   return (
-    <group>
-      <mesh position={[0, 25, -WORLD_LIMIT]}><planeGeometry args={[WORLD_LIMIT*2, 50]} /><meshStandardMaterial {...wallConfig} /></mesh>
-      <mesh position={[0, 25, WORLD_LIMIT]}><planeGeometry args={[WORLD_LIMIT*2, 50]} /><meshStandardMaterial {...wallConfig} /></mesh>
-      <mesh position={[-WORLD_LIMIT, 25, 0]} rotation={[0, Math.PI/2, 0]}><planeGeometry args={[WORLD_LIMIT*2, 50]} /><meshStandardMaterial {...wallConfig} /></mesh>
-      <mesh position={[WORLD_LIMIT, 25, 0]} rotation={[0, Math.PI/2, 0]}><planeGeometry args={[WORLD_LIMIT*2, 50]} /><meshStandardMaterial {...wallConfig} /></mesh>
-    </group>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+      <ringGeometry args={[0.4, 0.5, 32]} />
+      <meshBasicMaterial color="#f1c40f" transparent opacity={0.6} />
+    </mesh>
   )
 }
 
-function OtherPlayer({ position, isWorking, color, name, message, onClick }) {
-  if (!position || position.length < 3 || isNaN(position[0]) || isNaN(position[2])) return null
+function OtherPlayer({ position, isWorking, color, name, message, onClick, rotation }) {
+  if (!position || isNaN(position[0])) return null
   return (
     <group position={position} onClick={(e) => { e.stopPropagation(); onClick() }}>
-      <Player isWorking={isWorking} skin={color} />
+      {/* 其他玩家也要传 rotation */}
+      <Player isWorking={isWorking} skin={color} rotation={rotation} />
       <SpeechBubble text={message} />
       <Html position={[0, 2.2, 0]} center distanceFactor={10}>
-        <div style={{background: 'rgba(0,0,0,0.4)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', whiteSpace: 'nowrap'}}>
+        <div style={{background: 'rgba(0,0,0,0.3)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', whiteSpace: 'nowrap'}}>
           {name || "Visitor"}
         </div>
       </Html>
@@ -113,32 +90,29 @@ function OtherPlayer({ position, isWorking, color, name, message, onClick }) {
 }
 
 export default function GameScene({ 
-  isWorking, hasShop, myPosition, myColor, myMessage, 
+  isWorking, hasShop, myPosition, 
+  myRotation, // <--- 必须接收这个参数
+  myColor, myMessage, 
   otherPlayers, buildings, currentGrid, floatEvents, lang = 'zh',
   onPlayerClick
 }) {
   
   const trees = useMemo(() => {
     const temp = []
-    for(let i=0; i<200; i++) {
+    for(let i=0; i<150; i++) {
       const angle = Math.random() * Math.PI * 2
-      const radius = 20 + Math.random() * 180 
-      temp.push({
-        x: Math.sin(angle) * radius,
-        z: Math.cos(angle) * radius,
-        type: Math.random() > 0.5 ? 'pine' : 'round'
-      })
+      const radius = 25 + Math.random() * 200 
+      temp.push({ x: Math.sin(angle) * radius, z: Math.cos(angle) * radius, type: Math.random() > 0.5 ? 'pine' : 'round' })
     }
     return temp
   }, [])
 
   const safeMyPos = (myPosition && !isNaN(myPosition[0])) ? myPosition : [0,0,0]
-
   const validBuildings = useMemo(() => {
     if (!buildings) return []
     const seen = new Set()
     return buildings.filter(b => {
-      if (b.x === null || b.z === null || isNaN(b.x) || isNaN(b.z)) return false
+      if (b.x === null || isNaN(b.x)) return false
       if (seen.has(b.id)) return false
       seen.add(b.id)
       return true
@@ -147,16 +121,14 @@ export default function GameScene({
 
   return (
     <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: '#dff9fb' }}>
-      <Canvas shadows="basic" dpr={[1, 1.5]}>
+      <Canvas shadows dpr={[1, 2]} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2 }}>
         
-        <PerspectiveCamera makeDefault position={[0, 12, 16]} fov={45} />
-        <OrbitControls enableZoom={true} minDistance={5} maxDistance={60} target={safeMyPos} />
+        <PerspectiveCamera makeDefault position={[0, 5, 8]} fov={50} />
+        <OrbitControls enableZoom={true} minDistance={4} maxDistance={20} target={safeMyPos} makeDefault maxPolarAngle={Math.PI / 2.2} />
 
         <Suspense fallback={<Html center>Loading...</Html>}>
           <EnvironmentSet />
           <Ground />
-          <WorldBorder />
-          
           <FloatingTextManager events={floatEvents} />
           <NPCSystem />
           {currentGrid && <SelectionBox x={currentGrid.x} z={currentGrid.z} />}
@@ -167,7 +139,6 @@ export default function GameScene({
             const owner = b.owner_name || "未知富豪"
             const level = b.level ? Number(b.level) : 1
             const type = b.type || 'store'
-
             switch(type) {
               case 'store':  return <ConvenienceStore key={b.id} position={pos} lang={lang} owner={owner} level={level} />
               case 'coffee': return <CoffeeShop key={b.id} position={pos} lang={lang} owner={owner} level={level} />
@@ -179,11 +150,24 @@ export default function GameScene({
             }
           })}
 
+          {/* === 🟢 核心修复 === */}
           <group position={safeMyPos}>
-             <Player isWorking={isWorking} skin={myColor} />
+             {/* 
+                之前这里漏了 rotation={myRotation} 
+                所以小人永远是 rotation=0，导致只会平移不会转身
+             */}
+             <Player isWorking={isWorking} skin={myColor} rotation={myRotation} />
+             
+             <PlayerMarker /> 
              <SpeechBubble text={myMessage} />
              <Html position={[0, 2.2, 0]} center distanceFactor={10}>
-                <div style={{color: '#f1c40f', fontWeight: 'bold', fontSize: '12px', textShadow: '0 1px 2px rgba(0,0,0,0.5)', whiteSpace: 'nowrap'}}>YOU</div>
+                <div style={{
+                  color: '#f1c40f', fontWeight: '900', fontSize: '14px', 
+                  textShadow: '0 2px 4px rgba(0,0,0,0.5)', whiteSpace: 'nowrap',
+                  background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px'
+                }}>
+                   YOU
+                </div>
              </Html>
              {hasShop && <group position={[1.5, 0, 0]}><Shop /><Html position={[0, 3, 0]} center distanceFactor={10}><div style={{color:'#f39c12', fontSize:'10px', fontWeight:'bold', whiteSpace: 'nowrap'}}>MY SHOP</div></Html></group>}
           </group>
@@ -192,26 +176,21 @@ export default function GameScene({
             const p = otherPlayers[key]
             if (!p.position) return null
             return <OtherPlayer 
-                key={key} 
-                position={p.position} 
-                color={p.skin || p.color} 
-                isWorking={p.isWorking} 
-                name={p.name} 
-                message={p.message}
-                onClick={() => onPlayerClick(p)} 
+              key={key} 
+              position={p.position} 
+              rotation={p.rotation} // 别人的朝向也要传
+              color={p.skin || p.color} 
+              isWorking={p.isWorking} 
+              name={p.name} 
+              message={p.message} 
+              onClick={() => onPlayerClick(p)} 
             />
           })}
           
           {trees.map((t, i) => {
-             const isBlocked = validBuildings.some(b => {
-               const dx = t.x - b.x
-               const dz = t.z - b.z
-               return Math.sqrt(dx*dx + dz*dz) < 3.5 
-             })
-             if (isBlocked) return null 
-             return <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
+             const isBlocked = validBuildings.some(b => Math.sqrt((t.x-b.x)**2 + (t.z-b.z)**2) < 4)
+             return isBlocked ? null : <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
           })}
-
         </Suspense>
       </Canvas>
     </div>
