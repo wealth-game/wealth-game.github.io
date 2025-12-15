@@ -4,13 +4,13 @@ import { Canvas } from '@react-three/fiber'
 import { 
   OrbitControls, 
   PerspectiveCamera, 
-  Environment, 
   ContactShadows, 
   Html,
   Sky,
   BakeShadows
 } from '@react-three/drei'
 
+// 引入资源
 import { Player } from './models/Player'
 import { Shop } from './models/Shop'
 import { Tree } from './models/Tree'
@@ -27,38 +27,64 @@ import {
 
 const WORLD_LIMIT = 1000
 
+// === 1. 环境设置 (纯离线版 - 绝不下载任何资源) ===
 function EnvironmentSet() {
   return (
     <>
-      <Sky distance={450000} sunPosition={[10, 2, 10]} inclination={0.6} azimuth={0.1} />
-      <Environment frames={Infinity} resolution={128} preset="apartment" />
-      <hemisphereLight intensity={0.6} color="#ffffff" groundColor="#b9d5ff" />
-      <directionalLight 
-        position={[20, 30, 10]} intensity={1.2} 
-        castShadow shadow-mapSize={[2048, 2048]} 
-        shadow-camera-left={-50} shadow-camera-right={50}
-        shadow-camera-top={50} shadow-camera-bottom={-50}
-        shadow-bias={-0.0005}
+      {/* 1. 物理天空 (纯代码生成，不用联网) */}
+      <Sky 
+        distance={450000} 
+        sunPosition={[100, 20, 100]} 
+        inclination={0} 
+        azimuth={0.25} 
       />
-      <fog attach="fog" args={['#dff9fb', 40, 150]} />
+
+      {/* 
+         2. 半球光 (关键：替代 Environment 补光)
+         调高强度，防止没有 HDR 贴图导致阴影面太黑
+      */}
+      <hemisphereLight 
+        skyColor="#87CEEB" 
+        groundColor="#f0f2f5" 
+        intensity={1.0} 
+      />
+
+      {/* 3. 环境光 (基础亮度) */}
+      <ambientLight intensity={0.5} />
+
+      {/* 4. 主阳光 (产生阴影) */}
+      <directionalLight 
+        position={[50, 80, 30]} 
+        intensity={1.5} 
+        castShadow 
+        shadow-mapSize={[1024, 1024]} 
+        shadow-bias={-0.0001} 
+      />
+
+      {/* 5. 迷雾 */}
+      <fog attach="fog" args={['#dff9fb', 30, 90]} />
+      
+      {/* 静态阴影优化 */}
       <BakeShadows />
     </>
   )
 }
 
+// 2. 地面
 function Ground() {
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
         <planeGeometry args={[WORLD_LIMIT * 2, WORLD_LIMIT * 2]} />
-        <meshStandardMaterial color="#f0f2f5" roughness={0.6} metalness={0.05} />
+        <meshStandardMaterial color="#c7ecee" roughness={0.8} />
       </mesh>
       <GridMap size={2000} divisions={1000} />
-      <ContactShadows resolution={1024} scale={80} blur={2.5} opacity={0.3} far={10} color="#1a1a1a" />
+      <ContactShadows resolution={512} scale={50} blur={2} opacity={0.4} far={1} color="#000000" />
     </>
   )
 }
 
+// 边界空气墙
 function WorldBorder() {
   const wallConfig = { transparent: true, opacity: 0.05, color: '#ff4757', side: 2 }
   return (
@@ -72,7 +98,7 @@ function WorldBorder() {
 }
 
 function OtherPlayer({ position, isWorking, color, name, message, onClick }) {
-  if (!position || isNaN(position[0])) return null
+  if (!position || position.length < 3 || isNaN(position[0]) || isNaN(position[2])) return null
   return (
     <group position={position} onClick={(e) => { e.stopPropagation(); onClick() }}>
       <Player isWorking={isWorking} skin={color} />
@@ -94,10 +120,14 @@ export default function GameScene({
   
   const trees = useMemo(() => {
     const temp = []
-    for(let i=0; i<150; i++) {
+    for(let i=0; i<200; i++) {
       const angle = Math.random() * Math.PI * 2
-      const radius = 25 + Math.random() * 200 
-      temp.push({ x: Math.sin(angle) * radius, z: Math.cos(angle) * radius, type: Math.random() > 0.5 ? 'pine' : 'round' })
+      const radius = 20 + Math.random() * 180 
+      temp.push({
+        x: Math.sin(angle) * radius,
+        z: Math.cos(angle) * radius,
+        type: Math.random() > 0.5 ? 'pine' : 'round'
+      })
     }
     return temp
   }, [])
@@ -108,7 +138,7 @@ export default function GameScene({
     if (!buildings) return []
     const seen = new Set()
     return buildings.filter(b => {
-      if (b.x === null || isNaN(b.x)) return false
+      if (b.x === null || b.z === null || isNaN(b.x) || isNaN(b.z)) return false
       if (seen.has(b.id)) return false
       seen.add(b.id)
       return true
@@ -116,16 +146,17 @@ export default function GameScene({
   }, [buildings])
 
   return (
-    // 关键修复：宽高 100%，去掉 borderRadius
-    <div style={{ width: '100%', height: '100%', overflow: 'hidden', background: '#dff9fb' }}>
-      <Canvas shadows="basic" dpr={[1, 2]} gl={{ antialias: true, stencil: false, depth: true }}>
-        <PerspectiveCamera makeDefault position={[0, 15, 25]} fov={40} />
-        <OrbitControls enableZoom={true} minDistance={8} maxDistance={80} target={safeMyPos} makeDefault />
+    <div style={{ width: '100%', height: '100%', borderRadius: '20px', overflow: 'hidden', background: '#dff9fb' }}>
+      <Canvas shadows="basic" dpr={[1, 1.5]}>
+        
+        <PerspectiveCamera makeDefault position={[0, 12, 16]} fov={45} />
+        <OrbitControls enableZoom={true} minDistance={5} maxDistance={60} target={safeMyPos} />
 
         <Suspense fallback={<Html center>Loading...</Html>}>
           <EnvironmentSet />
           <Ground />
           <WorldBorder />
+          
           <FloatingTextManager events={floatEvents} />
           <NPCSystem />
           {currentGrid && <SelectionBox x={currentGrid.x} z={currentGrid.z} />}
@@ -134,8 +165,9 @@ export default function GameScene({
           {validBuildings.map(b => {
             const pos = [b.x, 0, b.z]
             const owner = b.owner_name || "未知富豪"
-            const level = b.level || 1
+            const level = b.level ? Number(b.level) : 1
             const type = b.type || 'store'
+
             switch(type) {
               case 'store':  return <ConvenienceStore key={b.id} position={pos} lang={lang} owner={owner} level={level} />
               case 'coffee': return <CoffeeShop key={b.id} position={pos} lang={lang} owner={owner} level={level} />
@@ -158,13 +190,28 @@ export default function GameScene({
 
           {otherPlayers && Object.keys(otherPlayers).map(key => {
             const p = otherPlayers[key]
-            return <OtherPlayer key={key} position={p.position} color={p.skin || p.color} isWorking={p.isWorking} name={p.name} message={p.message} onClick={() => onPlayerClick(p)} />
+            if (!p.position) return null
+            return <OtherPlayer 
+                key={key} 
+                position={p.position} 
+                color={p.skin || p.color} 
+                isWorking={p.isWorking} 
+                name={p.name} 
+                message={p.message}
+                onClick={() => onPlayerClick(p)} 
+            />
           })}
           
           {trees.map((t, i) => {
-             const isBlocked = validBuildings.some(b => Math.sqrt((t.x-b.x)**2 + (t.z-b.z)**2) < 4)
-             return isBlocked ? null : <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
+             const isBlocked = validBuildings.some(b => {
+               const dx = t.x - b.x
+               const dz = t.z - b.z
+               return Math.sqrt(dx*dx + dz*dz) < 3.5 
+             })
+             if (isBlocked) return null 
+             return <Tree key={i} position={[t.x, 0, t.z]} type={t.type} />
           })}
+
         </Suspense>
       </Canvas>
     </div>
