@@ -34,15 +34,11 @@ function BuildingLabel({ type, lang, owner, level, color, bg = 'white', border =
   )
 }
 
-// 🎨 糖果色材质配置
-// 1. 墙体：明亮，无金属感
-const matWall = { roughness: 0.2, metalness: 0 } 
-// 2. 玻璃：半透明，稍微发光，青色
-const matGlass = { color: "#55efc4", transparent: true, opacity: 0.6, roughness: 0.1, metalness: 0 }
-// 3. 高级金：不用金属度，而是用黄色+自发光
-const matGold = { color: "#f1c40f", emissive: "#f1c40f", emissiveIntensity: 0.2, roughness: 0.4, metalness: 0 }
-// 4. 深色部件：不要用纯黑，用深蓝或深灰
-const matDark = { color: "#2d3436", roughness: 0.5, metalness: 0 }
+// 💎【材质还原】：高光、反射、金属感
+const matBody = { roughness: 0.2, metalness: 0.3 } // 普通墙面也有光泽
+const matGlass = { color: "#a8e6cf", transparent: true, opacity: 0.6, roughness: 0, metalness: 0.9, envMapIntensity: 2 } // 玻璃强反射
+const matGold = { color: "#FFD700", roughness: 0.1, metalness: 1, envMapIntensity: 2.5 } // 纯金！亮瞎眼
+const matSilver = { color: "#ffffff", roughness: 0.2, metalness: 0.8, envMapIntensity: 1.5 } // 银色金属
 
 const getScale = (level) => 1 + ((level||1) - 1) * 0.05
 const isMaxLevel = (level) => (level||1) >= 6
@@ -51,16 +47,19 @@ const isMaxLevel = (level) => (level||1) >= 6
 export function ConvenienceStore({ position, lang = 'zh', owner, level=1 }) {
   const s = getScale(level)
   const isMax = isMaxLevel(level)
-  const wallColor = isMax ? "#ffeaa7" : "#ffffff" // 满级变淡黄
+  const wallColor = isMax ? "#f1c40f" : "#ffffff"
+  
+  // 满级时变为金属材质
+  const wallMat = isMax ? matGold : matBody
 
   return (
     <group position={position} scale={[s, s, s]}>
       <group position={[0, 0.05, 0]}>
         <mesh position={[0, 1.25, 0]} castShadow receiveShadow>
           <boxGeometry args={[1.8, 2.5, 1.8]} />
-          <meshStandardMaterial color={wallColor} {...matWall} />
+          <meshStandardMaterial color={wallColor} {...wallMat} />
         </mesh>
-        {(level||1) >= 3 && <mesh position={[0, 2.8, 0]} castShadow><boxGeometry args={[1.5, 0.8, 1.5]} /><meshStandardMaterial color="#ff7675" /></mesh>}
+        {(level||1) >= 3 && <mesh position={[0, 2.8, 0]} castShadow><boxGeometry args={[1.5, 0.8, 1.5]} /><meshStandardMaterial color={isMax?"#e67e22":"#bdc3c7"} {...matBody} /></mesh>}
         <group position={[0, 2.2, 0.92]}>
           <mesh position={[0, 0.2, 0]}><boxGeometry args={[1.6, 0.15, 0.05]} /><meshStandardMaterial color="#f39c12" /></mesh>
           <mesh position={[0, 0.05, 0]}><boxGeometry args={[1.6, 0.15, 0.05]} /><meshStandardMaterial color="#27ae60" /></mesh>
@@ -79,16 +78,17 @@ export function ConvenienceStore({ position, lang = 'zh', owner, level=1 }) {
 export function CoffeeShop({ position, lang = 'zh', owner, level=1 }) {
   const s = getScale(level)
   const isMax = isMaxLevel(level)
-  const wallColor = isMax ? "#d35400" : "#6d4c41" // 提亮咖啡色
+  const wallColor = isMax ? "#f1c40f" : "#5d4037"
+  const wallMat = isMax ? matGold : { roughness: 0.6, metalness: 0.1 }
 
   return (
     <group position={position} scale={[s, s, s]}>
       <group position={[0, 0.05, 0]}>
-        <mesh position={[0, 1.5, 0]} castShadow receiveShadow><boxGeometry args={[1.8, 3, 1.8]} /><meshStandardMaterial color={wallColor} {...matWall} /></mesh>
+        <mesh position={[0, 1.5, 0]} castShadow receiveShadow><boxGeometry args={[1.8, 3, 1.8]} /><meshStandardMaterial color={wallColor} {...wallMat} /></mesh>
         <mesh position={[0, 1.2, 0.91]}><planeGeometry args={[1.4, 2]} /><meshStandardMaterial {...matGlass} /></mesh>
-        <mesh position={[0, 2.4, 1.1]} rotation={[0.3, 0, 0]} castShadow><boxGeometry args={[1.9, 0.1, 0.6]} /><meshStandardMaterial color="#00b894" {...matWall} /></mesh>
+        <mesh position={[0, 2.4, 1.1]} rotation={[0.3, 0, 0]} castShadow><boxGeometry args={[1.9, 0.1, 0.6]} /><meshStandardMaterial color="#00704a" {...matBody} /></mesh>
         <group position={[0, 3.5, 0]}>
-          <BuildingLabel type="coffee" lang={lang} owner={owner} level={level} color="white" bg="#00b894" ownerColor="rgba(255,255,255,0.9)" />
+          <BuildingLabel type="coffee" lang={lang} owner={owner} level={level} color="white" bg="#00704a" ownerColor="rgba(255,255,255,0.9)" />
         </group>
       </group>
     </group>
@@ -101,43 +101,50 @@ export function GasStation({ position, lang = 'zh', owner, level=1 }) {
   const isMax = isMaxLevel(level)
   return (
     <group position={position} scale={[s, s, s]}>
-      <mesh position={[0, 2.5, 0]} castShadow><boxGeometry args={[3.5, 0.2, 3.5]} /><meshStandardMaterial color={isMax?"#f1c40f":"#ff7675"} /></mesh>
-      <mesh position={[-1.5, 1.25, -1.5]} castShadow><cylinderGeometry args={[0.15, 0.15, 2.5]} /><meshStandardMaterial color="#dfe6e9" /></mesh>
-      <mesh position={[1.5, 1.25, 1.5]} castShadow><cylinderGeometry args={[0.15, 0.15, 2.5]} /><meshStandardMaterial color="#dfe6e9" /></mesh>
-      <mesh position={[0, 0.6, 0]} castShadow><boxGeometry args={[1.2, 1.2, 0.4]} /><meshStandardMaterial color="#ffeaa7" /></mesh>
+      <mesh position={[0, 2.5, 0]} castShadow><boxGeometry args={[3.5, 0.2, 3.5]} /><meshStandardMaterial color={isMax?"#f1c40f":"#e74c3c"} {...(isMax?matGold:matBody)} /></mesh>
+      <mesh position={[-1.5, 1.25, -1.5]} castShadow><cylinderGeometry args={[0.15, 0.15, 2.5]} /><meshStandardMaterial {...matSilver} /></mesh>
+      <mesh position={[1.5, 1.25, 1.5]} castShadow><cylinderGeometry args={[0.15, 0.15, 2.5]} /><meshStandardMaterial {...matSilver} /></mesh>
+      <mesh position={[0, 0.6, 0]} castShadow><boxGeometry args={[1.2, 1.2, 0.4]} /><meshStandardMaterial color="#f1c40f" {...matBody} /></mesh>
       <group position={[0, 3.5, 0]}>
-        <BuildingLabel type="gas" lang={lang} owner={owner} level={level} color="white" bg="#ff7675" ownerColor="white" />
+        <BuildingLabel type="gas" lang={lang} owner={owner} level={level} color="white" bg="#e74c3c" ownerColor="white" />
       </group>
     </group>
   )
 }
 
-// === T5: 科技公司 (亮蓝色) ===
+// === T5: 科技公司 ===
 export function TechOffice({ position, lang = 'zh', owner, level=1 }) {
   const s = getScale(level)
   const isMax = isMaxLevel(level)
-  const glassColor = isMax ? "#fdcb6e" : "#74b9ff"
+  // 满级变成金色玻璃
+  const glassColor = isMax ? "#f1c40f" : "#3498db"
   return (
     <group position={position} scale={[s, s, s]}>
-      <mesh position={[0, 2, 0]} castShadow><boxGeometry args={[2.5, 4, 2.5]} /><meshStandardMaterial color={glassColor} transparent opacity={0.9} roughness={0.1} /></mesh>
+      <mesh position={[0, 2, 0]} castShadow>
+        <boxGeometry args={[2.5, 4, 2.5]} />
+        {/* 玻璃高反光 */}
+        <meshStandardMaterial color={glassColor} transparent opacity={0.8} roughness={0} metalness={0.9} envMapIntensity={2} />
+      </mesh>
       {[1, 2, 3].map(y => <mesh key={y} position={[0, y, 0]}><boxGeometry args={[2.55, 0.1, 2.55]} /><meshStandardMaterial color="white" /></mesh>)}
       <group position={[0, 4.8, 0]}>
-        <BuildingLabel type="office" lang={lang} owner={owner} level={level} color="#0984e3" />
+        <BuildingLabel type="office" lang={lang} owner={owner} level={level} color="#3498db" />
       </group>
     </group>
   )
 }
 
-// === T6: 摩天大楼 (不再是黑色，改为深蓝/紫) ===
+// === T6: 摩天大楼 ===
 export function Skyscraper({ position, lang = 'zh', owner, level=1 }) {
   const s = getScale(level)
   const isMax = isMaxLevel(level)
-  const bodyColor = isMax ? "#2d3436" : "#341f97" // 深紫色
+  // 满级纯金，未满级深色金属
+  const bodyMat = isMax ? matGold : { color: "#2d3436", roughness: 0.2, metalness: 0.8 }
+
   return (
     <group position={position} scale={[s, s, s]}>
-      <mesh position={[0, 5, 0]} castShadow><boxGeometry args={[3, 10, 3]} /><meshStandardMaterial color={bodyColor} {...matWall} /></mesh>
-      <mesh position={[0, 5, 1.51]}><planeGeometry args={[2.5, 9]} /><meshStandardMaterial color="#feca57" emissive="#feca57" emissiveIntensity={0.6} /></mesh>
-      <mesh position={[0, 10.5, 0]}><coneGeometry args={[1.5, 2, 4]} rotation={[0, Math.PI/4, 0]} /><meshStandardMaterial color={isMax?"#f1c40f":bodyColor} /></mesh>
+      <mesh position={[0, 5, 0]} castShadow><boxGeometry args={[3, 10, 3]} /><meshStandardMaterial {...bodyMat} /></mesh>
+      <mesh position={[0, 5, 1.51]}><planeGeometry args={[2.5, 9]} /><meshStandardMaterial color={isMax?"#fff":"#f1c40f"} emissive={isMax?"#f1c40f":"#f1c40f"} emissiveIntensity={0.5} transparent opacity={0.3} /></mesh>
+      <mesh position={[0, 10.5, 0]}><coneGeometry args={[1.5, 2, 4]} rotation={[0, Math.PI/4, 0]} /><meshStandardMaterial {...bodyMat} /></mesh>
       <group position={[0, 12.5, 0]}>
         <BuildingLabel type="tower" lang={lang} owner={owner} level={level} color="gold" bg="black" border="1px solid gold" />
       </group>
@@ -145,18 +152,21 @@ export function Skyscraper({ position, lang = 'zh', owner, level=1 }) {
   )
 }
 
-// === T7: 火箭基地 (鲜艳红白) ===
+// === T7: 火箭基地 ===
 export function RocketBase({ position, lang = 'zh', owner, level=1 }) {
   const s = getScale(level)
   const isMax = isMaxLevel(level)
+  // 满级黄金火箭
+  const rocketMat = isMax ? matGold : { color: "white", roughness: 0.3, metalness: 0.4 }
+
   return (
     <group position={position} scale={[s, s, s]}>
-      <mesh position={[0, 0.5, 0]} receiveShadow><boxGeometry args={[5, 1, 5]} /><meshStandardMaterial color={isMax?"#f1c40f":"#bdc3c7"} /></mesh>
+      <mesh position={[0, 0.5, 0]} receiveShadow><boxGeometry args={[5, 1, 5]} /><meshStandardMaterial color="#7f8c8d" roughness={0.5} metalness={0.2} /></mesh>
       <group position={[0, 3.5, 0]}>
-        <mesh castShadow><cylinderGeometry args={[0.6, 0.6, 6, 32]} /><meshStandardMaterial color="white" /></mesh>
-        <mesh position={[0, 3.5, 0]}><coneGeometry args={[0.6, 1.5, 32]} /><meshStandardMaterial color="#ff4757" /></mesh>
+        <mesh castShadow><cylinderGeometry args={[0.6, 0.6, 6, 32]} /><meshStandardMaterial {...rocketMat} /></mesh>
+        <mesh position={[0, 3.5, 0]}><coneGeometry args={[0.6, 1.5, 32]} /><meshStandardMaterial color="#c0392b" {...(isMax?matGold:{})} /></mesh>
       </group>
-      <mesh position={[2, 5, 0]}><boxGeometry args={[0.5, 10, 0.5]} /><meshStandardMaterial color={isMax?"#f1c40f":"#e17055"} /></mesh>
+      <mesh position={[2, 5, 0]}><boxGeometry args={[0.5, 10, 0.5]} /><meshStandardMaterial color={isMax?"#f1c40f":"#e67e22"} wireframe /></mesh>
       <group position={[0, 8.5, 0]}>
         <BuildingLabel type="rocket" lang={lang} owner={owner} level={level} color="#e74c3c" />
       </group>
