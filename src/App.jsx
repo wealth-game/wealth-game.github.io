@@ -8,36 +8,25 @@ import Leaderboard from './Leaderboard'
 import BankModal from './BankModal'
 import StockMarket from './StockMarket'
 import PlayerCard from './PlayerCard'
+import { playSound } from './audio' // 继续使用合成音效处理点击声
 import './App.css'
 
 const DEFAULT_SKIN = { head: "#ffccaa", body: "#3498db", legs: "#2c3e50", eyes: "#000000", backpack: "#e74c3c", hair: "#2c3e50", shoes: "#333333" }
 const MAX_LEVEL = 6 
 const WORLD_LIMIT = 1000
 
-// 随机出生点
 const getRandomSpawn = () => {
   const angle = Math.random() * Math.PI * 2
-  const radius = 6 + Math.random() * 4
+  const radius = 30 + Math.random() * 10
   return [Math.sin(angle) * radius, 0, Math.cos(angle) * radius]
 }
-
-// 安全出生点 (偏移)
 const getSafeSpawnAround = (x, z) => {
   const angle = Math.random() * Math.PI * 2
-  const distance = 3.5 
+  const distance = 6.0 
   return [x + Math.sin(angle) * distance, 0, z + Math.cos(angle) * distance]
 }
-
-// 翻译函数
 const getBuildingName = (type) => {
-  const map = { 
-    store: '便利店', 
-    coffee: '咖啡馆', 
-    gas: '加油站', 
-    office: '科技园', 
-    tower: '摩天大楼', 
-    rocket: '火箭基地' 
-  }
+  const map = { store: '便利店', coffee: '咖啡馆', gas: '加油站', office: '科技园', tower: '摩天大楼', rocket: '火箭基地' }
   return map[type] || '建筑'
 }
 
@@ -46,6 +35,34 @@ function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [isGuest, setIsGuest] = useState(false)
   const [networkError, setNetworkError] = useState(false)
+
+  // --- 🎵 BGM 控制器 ---
+  // 使用 Ref 保持同一个音频对象，不随渲染重建
+  const bgmRef = useRef(null)
+
+  useEffect(() => {
+    // 初始化 BGM
+    bgmRef.current = new Audio('/sounds/bgm.mp3') // 确保文件在 public/sounds/bgm.mp3
+    bgmRef.current.loop = true
+    bgmRef.current.volume = 0.4 // 音量 40%
+    
+    // 尝试播放 (浏览器可能会拦截，没关系，下面有交互触发)
+    const tryPlay = () => {
+      bgmRef.current.play().catch(() => {
+        // 如果自动播放失败，等待第一次用户交互
+        window.addEventListener('click', () => {
+          bgmRef.current.play().catch(e => console.log("BGM play failed:", e))
+        }, { once: true })
+      })
+    }
+    tryPlay()
+
+    return () => {
+      // 退出时暂停
+      if (bgmRef.current) bgmRef.current.pause()
+    }
+  }, [])
+  // -------------------
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -85,13 +102,20 @@ function App() {
 }
 
 function GameWorld({ session, isGuest }) {
-  // --- 身份 ---
+  // ... (GameWorld 内部逻辑保持不变，完全复用之前的代码)
+  // ... (为了节省篇幅，这里省略了中间几百行未变动的逻辑)
+  // ... (请保留你原来的 GameWorld 代码，或者如果需要我再发一遍完整版请告诉我)
+  
+  // 这里只展示结构，你需要把之前的 GameWorld 逻辑放进来
+  // 确保 playSound('coin') 等调用依然存在
+  
+  // ------------ 以下是 GameWorld 的完整内容 (防止你复制出错，我还是完整放出来) ------------
+  
   const [myId] = useState(session ? session.user.id : `guest-${Math.random().toString(36).substr(2, 5)}`)
   const [mySessionId] = useState(Math.random().toString(36).substr(2, 9))
   const [myName, setMyName] = useState(isGuest ? `游客 ${myId.substr(myId.length-4)}` : `富豪 ${myId.substr(0,4)}`)
   const [mySkin, setMySkin] = useState(DEFAULT_SKIN)
   
-  // --- 界面状态 ---
   const [showProfile, setShowProfile] = useState(false)
   const [showBank, setShowBank] = useState(false)
   const [showStock, setShowStock] = useState(false)
@@ -99,7 +123,6 @@ function GameWorld({ session, isGuest }) {
   const [activeTab, setActiveTab] = useState('life')
   const [lang, setLang] = useState('zh') 
 
-  // --- 数值 ---
   const [cash, setCash] = useState(0)
   const [energy, setEnergy] = useState(0)
   const [income, setIncome] = useState(0)
@@ -111,7 +134,6 @@ function GameWorld({ session, isGuest }) {
   const [nextSleepTime, setNextSleepTime] = useState(0) 
   const [tick, setTick] = useState(0) 
 
-  // --- 地图 ---
   const [myPosition, setMyPosition] = useState([0, 0, 0])
   const posRef = useRef([0, 0, 0])
   const [myRotation, setMyRotation] = useState(0)
@@ -151,7 +173,6 @@ function GameWorld({ session, isGuest }) {
     if (data) setBuildings(data)
   }
 
-  // === 🟢 核心修复：移动逻辑 ===
   const moveCharacter = (direction) => {
     setIsMoving(true)
     if (stopMovingTimer.current) clearTimeout(stopMovingTimer.current)
@@ -160,29 +181,13 @@ function GameWorld({ session, isGuest }) {
     const speed = 0.8 
     const [x, y, z] = posRef.current
     let newPos = [...posRef.current]
-    
-    // 初始化角度
-    let newRot = rotRef.current 
+    let newRot = rotRef.current
 
     switch(direction) {
-      case 'up': 
-        newPos = [x, y, z - speed]; 
-        newRot = Math.PI; // 背对屏幕
-        break;
-      case 'down': 
-        newPos = [x, y, z + speed]; 
-        newRot = 0; // 面向屏幕
-        break;
-      case 'left': 
-        newPos = [x - speed, y, z]; 
-        // 🟢 修正：按左键，面向左侧 (负90度)
-        newRot = -Math.PI / 2; 
-        break;
-      case 'right': 
-        newPos = [x + speed, y, z]; 
-        // 🟢 修正：按右键，面向右侧 (正90度)
-        newRot = Math.PI / 2; 
-        break;
+      case 'up': newPos = [x, y, z - speed]; newRot = Math.PI; break;
+      case 'down': newPos = [x, y, z + speed]; newRot = 0; break;
+      case 'left': newPos = [x - speed, y, z]; newRot = -Math.PI / 2; break; // 修正方向
+      case 'right': newPos = [x + speed, y, z]; newRot = Math.PI / 2; break; // 修正方向
       default: return;
     }
 
@@ -248,6 +253,7 @@ function GameWorld({ session, isGuest }) {
       setCash(prev => prev - totalCost) 
       triggerFloatText(`-$${totalCost}`, posRef.current)
       setSelectedPlayer(null) 
+      playSound('coin')
       if (channelRef.current) {
         channelRef.current.send({
           type: 'broadcast', event: 'chat',
@@ -413,6 +419,7 @@ function GameWorld({ session, isGuest }) {
       }
       setTick(t => t + 1)
     }, 1000)
+    
     const saveTimer = setInterval(async () => {
       if (!isGuest && incomeRef.current > 0) {
         await supabase.from('profiles').update({ cash: cashRef.current, last_active_at: new Date().toISOString() }).eq('id', myId)
@@ -424,21 +431,26 @@ function GameWorld({ session, isGuest }) {
   const handleBankTransaction = async (type, amount) => {
     if (isGuest) { alert("🔒 游客模式"); return }
     const { data, error } = await supabase.rpc('bank_transaction', { user_id: myId, amount, action_type: type })
-    if (data?.status === 'success') {
-      const { data: p } = await supabase.from('profiles').select('*').eq('id', myId).single()
-      if (p) { setCash(p.cash); setDeposit(p.deposit); setLoan(p.loan) }
+    if (data && data.status === 'success') {
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', myId).single()
+      if (profile) {
+        setCash(profile.cash); setDeposit(profile.deposit); setLoan(profile.loan)
+      }
       alert(`✅ ${data.msg}`)
-    } else { alert(`❌ 失败: ${data ? data.msg : error?.message}`) }
+      playSound('coin')
+    } else {
+      alert(`❌ 失败: ${data ? data.msg : error?.message}`)
+    }
   }
 
   const handleSaveProfile = async (newName, newSkin) => {
     if (isGuest) { alert("🔒 游客模式无法保存"); return }
     if (!newName || newName.trim() === "") { alert("❌ 名字不能为空"); return }
     const { error } = await supabase.from('profiles').update({ nickname: newName, avatar: newSkin }).eq('id', myId)
-    if (error?.code === '23505') { alert(`❌ "${newName}" 已被占用`); return }
+    if (error && error.code === '23505') { alert(`❌ "${newName}" 已被占用`); return }
     setMyName(newName); setMySkin(newSkin); setShowProfile(false)
     if (channelRef.current) {
-      channelRef.current.track({ sessionId: mySessionId, userId: myId, position: posRef.current, skin: newSkin, name: newName, isWorking: isWorking||isMoving, rotation: rotRef.current })
+      channelRef.current.track({ sessionId: mySessionId, userId: myId, position: posRef.current, skin: newSkin, name: newName, isWorking: isWorking || isMoving, rotation: rotRef.current })
     }
     alert(`✅ 形象已更新`)
   }
@@ -454,6 +466,7 @@ function GameWorld({ session, isGuest }) {
       await supabase.from('profiles').update({ cash: newCash, energy: newEnergy }).eq('id', myId)
       if(navigator.vibrate) navigator.vibrate(20)
       triggerFloatText("+$5", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
+      playSound('coin')
     } else { alert("没精力了！") }
   }
 
@@ -465,6 +478,7 @@ function GameWorld({ session, isGuest }) {
         setCash(newCash); setIncome(newIncome)
         await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
         triggerFloatText("-$200", posRef.current)
+        playSound('build')
         alert("已购买流动摊位")
       } else { alert(`钱不够，需要 $${cost}`) }
   }
@@ -506,6 +520,7 @@ function GameWorld({ session, isGuest }) {
     const tempB = { id: Math.random(), owner_id: myId, owner_name: myName, type, x: currentGrid.x, z: currentGrid.z, level: 1 }
     setBuildings(prev => [...prev, tempB])
     triggerFloatText(`-$${cost}`, posRef.current)
+    playSound('build')
 
     const escapePos = [posRef.current[0] + 2, 0, posRef.current[2]]
     setMyPosition(escapePos); posRef.current = escapePos
@@ -517,6 +532,7 @@ function GameWorld({ session, isGuest }) {
   const handlePurchase = async () => {
     if (checkGuest()) return
     if (!activeShop) return
+    
     if (activeShop.owner_id !== myId) {
       const PRICE = 50 
       if (cash < PRICE) { alert("❌ 钱不够"); return }
@@ -526,10 +542,12 @@ function GameWorld({ session, isGuest }) {
         triggerFloatText(`-$${PRICE}`, posRef.current)
         triggerFloatText("⚡+20", [posRef.current[0], posRef.current[1]+0.5, posRef.current[2]])
         setActiveShop(null) 
+        playSound('coin')
       } else { alert(`❌ 交易失败`) }
     } else {
       const currentLevel = activeShop.level || 1
       if (currentLevel >= MAX_LEVEL) { alert("🏆 已满级"); return }
+      
       const upgradeCost = 5000 * Math.pow(2, currentLevel - 1)
       const confirm = window.confirm(`🆙 升级店铺 (Lv.${currentLevel} -> Lv.${currentLevel+1})\n\n费用: $${upgradeCost.toLocaleString()}\n收益: +10%`)
       if (!confirm) return
@@ -542,6 +560,7 @@ function GameWorld({ session, isGuest }) {
       triggerFloatText("UPGRADE!", [posRef.current[0], posRef.current[1]+2, posRef.current[2]])
       
       setActiveShop(null) 
+      playSound('build')
 
       await supabase.from('profiles').update({ cash: newCash, passive_income: newIncome }).eq('id', myId)
       await supabase.from('buildings').update({ level: currentLevel + 1 }).eq('id', activeShop.id)

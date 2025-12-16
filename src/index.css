@@ -1,23 +1,36 @@
-/* src/index.css - 全局重置 */
-:root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/* src/index.css */
+
+/* 1. 定义字体：指向你下载在 public/fonts/ 下的文件 */
+@font-face {
+  font-family: 'GameFont';
+  src: url('/fonts/main.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
 }
 
-/* 关键修复：强制 html, body 和 root 占满屏幕 */
+:root {
+  /* 2. 应用字体：优先使用本地下载的圆体，如果没有则回退 */
+  font-family: 'GameFont', 'Varela Round', 'Nunito', 'Segoe UI', 'Roboto', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 html, body, #root {
   width: 100%;
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* 禁止出现滚动条 */
-  background-color: #f0f2f5; /* 防止加载时的白边 */
+  overflow: hidden;
+  background-color: #f0f2f5;
 }
 
-/* 移除所有默认的居中和最大宽度限制 */
 body {
-  display: block; /* 覆盖默认的 flex */
+  display: block; 
   place-items: unset;
   min-width: unset;
   min-height: unset;
